@@ -1,0 +1,51 @@
+name: Build and Release VibeDesk
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore VibeDesk.csproj
+
+      - name: Run Automated Tests
+        run: dotnet test VibeDesk.Tests/VibeDesk.Tests.csproj -c Release
+
+      - name: Publish Single-File Executable
+        run: >
+          dotnet publish VibeDesk.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o ./publish
+
+      - name: Create GitHub Release and Upload Binary
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: VibeDesk ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: ./publish/VibeDesk.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

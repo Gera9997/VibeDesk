@@ -12,6 +12,7 @@ using System.Windows.Media;
 using VibeDesk.Network;
 using VibeDesk.Network.P2P;
 using VibeDesk.UI;
+using VibeDesk.Update;
 
 namespace VibeDesk
 {
@@ -20,6 +21,9 @@ namespace VibeDesk
         private readonly string _myDeviceId;
         private readonly VibeHost _host;
         private readonly P2PSignaling _signaling;
+        private readonly UpdateManager _updateManager = new("Gera9997", "VibeDesk");
+        private UpdateInfo? _latestUpdateInfo;
+
         private IPEndPoint? _myPublicEndPoint;
         private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
@@ -29,6 +33,10 @@ namespace VibeDesk
         public MainWindow()
         {
             InitializeComponent();
+
+            TxtAppVersion.Text = AppVersion.FullTitle;
+            TxtFooterVersion.Text = $"VibeDesk {AppVersion.FullTitle}";
+            UpdateManager.CleanupLeftoverBackup();
 
             _myDeviceId = GetOrCreateDeviceId();
             TxtMyId.Text = FormatId(_myDeviceId);
@@ -58,6 +66,9 @@ namespace VibeDesk
 
             // 3. Register with global P2P signaling
             await InitializeSignalingAsync();
+
+            // 4. Background check for updates (non-blocking)
+            _ = CheckForUpdatesQuietlyAsync();
         }
 
         private void MainWindow_Closed(object? sender, EventArgs e)
@@ -515,6 +526,114 @@ namespace VibeDesk
             {
                 BtnConnect_Click(sender, e);
             }
+        }
+
+        private async Task CheckForUpdatesQuietlyAsync()
+        {
+            try
+            {
+                var info = await _updateManager.CheckForUpdateAsync();
+                if (info.HasUpdate)
+                {
+                    _latestUpdateInfo = info;
+                    Dispatcher.Invoke(() => ShowUpdateBanner(info));
+                }
+            }
+            catch { }
+        }
+
+        private void ShowUpdateBanner(UpdateInfo info)
+        {
+            TxtUpdateNewVersion.Text = info.LatestVersion;
+            TxtUpdateSize.Text = info.FileSizeBytes > 0 ? $"({info.FileSizeBytes / 1048576} МБ)" : "";
+            TxtUpdateStatus.Text = "Нажмите «Обновить сейчас» для загрузки новой версии и быстрого перезапуска.";
+            PbUpdateProgress.Visibility = Visibility.Collapsed;
+            BtnApplyUpdate.IsEnabled = true;
+            BannerUpdate.Visibility = Visibility.Visible;
+            AppendLog($"🔔 [Обновление] Доступна новая версия: {info.LatestVersion} {(info.FileSizeBytes > 0 ? $"({info.FileSizeBytes / 1048576} МБ)" : "")}");
+        }
+
+        private async void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            BtnCheckUpdate.IsEnabled = false;
+            AppendLog("🔍 Проверка обновлений на GitHub (Gera9997/VibeDesk)...");
+
+            try
+            {
+                var info = await _updateManager.CheckForUpdateAsync();
+                _latestUpdateInfo = info;
+
+                if (info.HasUpdate)
+                {
+                    ShowUpdateBanner(info);
+                }
+                else if (!string.IsNullOrEmpty(info.ErrorMessage))
+                {
+                    AppendLog($"⚠️ {info.ErrorMessage}");
+                    MessageBox.Show(this, info.ErrorMessage, "Проверка обновлений", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    AppendLog($"✅ У вас установлена актуальная версия ({AppVersion.FullTitle}).");
+                    MessageBox.Show(this, $"У вас установлена последняя версия ({AppVersion.FullTitle})!", "Обновления", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"❌ Ошибка проверки обновлений: {ex.Message}");
+                MessageBox.Show(this, $"Не удалось проверить обновления: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                BtnCheckUpdate.IsEnabled = true;
+            }
+        }
+
+        private async void BtnApplyUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_latestUpdateInfo == null || string.IsNullOrEmpty(_latestUpdateInfo.DownloadUrl))
+            {
+                MessageBox.Show(this, "Ссылка на скачивание файла релиза не найдена.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            BtnApplyUpdate.IsEnabled = false;
+            PbUpdateProgress.Visibility = Visibility.Visible;
+            PbUpdateProgress.Value = 0;
+            TxtUpdateStatus.Text = "Подготовка к загрузке...";
+
+            AppendLog($"⬇️ Загрузка обновления {_latestUpdateInfo.LatestVersion}...");
+
+            var progress = new Progress<(long received, long total, int percent)>(report =>
+            {
+                PbUpdateProgress.Value = report.percent;
+                if (report.total > 0)
+                {
+                    TxtUpdateStatus.Text = $"Загрузка: {report.percent}% ({report.received / 1048576} МБ / {report.total / 1048576} МБ)...";
+                }
+                else
+                {
+                    TxtUpdateStatus.Text = $"Загрузка: {report.received / 1048576} МБ...";
+                }
+            });
+
+            try
+            {
+                await _updateManager.DownloadAndApplyUpdateAsync(_latestUpdateInfo.DownloadUrl, progress);
+            }
+            catch (Exception ex)
+            {
+                BtnApplyUpdate.IsEnabled = true;
+                PbUpdateProgress.Visibility = Visibility.Collapsed;
+                TxtUpdateStatus.Text = $"Ошибка загрузки: {ex.Message}";
+                AppendLog($"❌ Ошибка загрузки обновления: {ex.Message}");
+                MessageBox.Show(this, $"Ошибка загрузки обновления: {ex.Message}", "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnCloseUpdateBanner_Click(object sender, RoutedEventArgs e)
+        {
+            BannerUpdate.Visibility = Visibility.Collapsed;
         }
     }
 }
