@@ -7,20 +7,52 @@ namespace VibeDesk.Network.P2P
 {
     public static class StunResolver
     {
-        public static async Task<IPEndPoint?> QueryPublicEndPointAsync(int localPort, string stunHost = "stun.l.google.com", int stunPort = 19302)
+        private static readonly (string Host, int Port)[] StunServers = new[]
         {
+            ("stun.l.google.com", 19302),
+            ("stun1.l.google.com", 19302),
+            ("stun2.l.google.com", 19302),
+            ("stun.cloudflare.com", 3478)
+        };
+
+        public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0)
+        {
+            foreach (var (host, port) in StunServers)
+            {
+                try
+                {
+                    var ep = await QueryServerAsync(host, port, localPort);
+                    if (ep != null)
+                    {
+                        return (ep, $"STUN успешен через {host}:{port} -> {ep.Address}:{ep.Port}");
+                    }
+                }
+                catch (Exception)
+                {
+                    // Try next server
+                }
+            }
+
+            return (null, "STUN серверы не ответили (возможно, UDP блокируется провайдером или порт занят)");
+        }
+
+        private static async Task<IPEndPoint?> QueryServerAsync(string stunHost, int stunPort, int localPort)
+        {
+            using var udp = new UdpClient();
             try
             {
-                using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, localPort));
-                udp.Client.ReceiveTimeout = 3000;
+                udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                if (localPort > 0)
+                {
+                    udp.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+                }
+                udp.Client.ReceiveTimeout = 2000;
 
-                // STUN Binding Request:
-                // 0x0001 (Binding Request), 0x0000 (Length), 0x2112A442 (Magic Cookie), 12-byte Transaction ID
                 byte[] request = new byte[20];
                 request[0] = 0x00;
                 request[1] = 0x01; // Binding Request
                 request[2] = 0x00;
-                request[3] = 0x00; // Length
+                request[3] = 0x00;
                 request[4] = 0x21;
                 request[5] = 0x12;
                 request[6] = 0xA4;
@@ -35,19 +67,19 @@ namespace VibeDesk.Network.P2P
                 await udp.SendAsync(request, request.Length, stunHost, stunPort);
 
                 var receiveTask = udp.ReceiveAsync();
-                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(3000));
+                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(2000));
                 if (completedTask != receiveTask)
                 {
-                    return null; // Timeout
+                    return null;
                 }
 
                 var result = receiveTask.Result;
                 byte[] response = result.Buffer;
 
-                if (response.Length < 20) return null;
-
-                // Check message type (0x0101 = Binding Response)
-                if (response[0] != 0x01 || response[1] != 0x01) return null;
+                if (response.Length < 20 || response[0] != 0x01 || response[1] != 0x01)
+                {
+                    return null;
+                }
 
                 int offset = 20;
                 while (offset + 4 <= response.Length)
@@ -58,14 +90,13 @@ namespace VibeDesk.Network.P2P
 
                     if (offset + attrLen > response.Length) break;
 
-                    // 0x0020 = XOR-MAPPED-ADDRESS
-                    if (attrType == 0x0020 && attrLen >= 8)
+                    if (attrType == 0x0020 && attrLen >= 8) // XOR-MAPPED-ADDRESS
                     {
                         byte family = response[offset + 1];
                         if (family == 0x01) // IPv4
                         {
                             ushort xorPort = (ushort)((response[offset + 2] << 8) | response[offset + 3]);
-                            int port = xorPort ^ 0x2112;
+                            int mappedPort = xorPort ^ 0x2112;
 
                             byte[] ipBytes = new byte[4];
                             ipBytes[0] = (byte)(response[offset + 4] ^ 0x21);
@@ -73,20 +104,18 @@ namespace VibeDesk.Network.P2P
                             ipBytes[2] = (byte)(response[offset + 6] ^ 0xA4);
                             ipBytes[3] = (byte)(response[offset + 7] ^ 0x42);
 
-                            var ip = new IPAddress(ipBytes);
-                            return new IPEndPoint(ip, port);
+                            return new IPEndPoint(new IPAddress(ipBytes), mappedPort);
                         }
                     }
-                    // 0x0001 = MAPPED-ADDRESS (older STUN)
-                    else if (attrType == 0x0001 && attrLen >= 8)
+                    else if (attrType == 0x0001 && attrLen >= 8) // MAPPED-ADDRESS
                     {
                         byte family = response[offset + 1];
                         if (family == 0x01)
                         {
-                            int port = (response[offset + 2] << 8) | response[offset + 3];
+                            int mappedPort = (response[offset + 2] << 8) | response[offset + 3];
                             byte[] ipBytes = new byte[4];
                             Buffer.BlockCopy(response, offset + 4, ipBytes, 0, 4);
-                            return new IPEndPoint(new IPAddress(ipBytes), port);
+                            return new IPEndPoint(new IPAddress(ipBytes), mappedPort);
                         }
                     }
 
@@ -95,9 +124,9 @@ namespace VibeDesk.Network.P2P
 
                 return null;
             }
-            catch
+            finally
             {
-                return null;
+                udp.Close();
             }
         }
     }

@@ -52,7 +52,13 @@ namespace VibeDesk.Network
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
-                DisconnectTimeout = 5000
+                DisconnectTimeout = 5000,
+                UnconnectedMessagesEnabled = true
+            };
+
+            _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
+            {
+                OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
             };
 
             _listener.ConnectionRequestEvent += request =>
@@ -290,6 +296,25 @@ namespace VibeDesk.Network
                     }
                     break;
             }
+        }
+
+        public void PunchNat(IPEndPoint target)
+        {
+            if (!_netServer.IsRunning) return;
+
+            Task.Run(async () =>
+            {
+                byte[] punch = Encoding.UTF8.GetBytes("VIBE_PUNCH");
+                for (int i = 0; i < 4; i++)
+                {
+                    try
+                    {
+                        _netServer.SendUnconnectedMessage(punch, target);
+                    }
+                    catch { }
+                    await Task.Delay(25);
+                }
+            });
         }
 
         public void SendClipboard(string text)

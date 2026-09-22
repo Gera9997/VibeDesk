@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Windows;
@@ -39,9 +40,17 @@ namespace VibeDesk
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            FindLocalIp();
+            AppendLog("=== Инициализация VibeDesk ===");
+            FindRealLocalIp();
+
+            // 1. Resolve STUN before starting host to discover public endpoint
+            await ResolveStunAsync();
+
+            // 2. Start local host
             StartLocalHost();
-            await InitializeP2PAsync();
+
+            // 3. Register with global P2P signaling
+            await InitializeSignalingAsync();
         }
 
         private void MainWindow_Closed(object? sender, EventArgs e)
@@ -67,7 +76,6 @@ namespace VibeDesk
                     }
                 }
 
-                // Generate new 6-digit ID
                 int randomId = new Random().Next(100000, 999999);
                 string newId = randomId.ToString();
                 File.WriteAllText(idFile, newId);
@@ -88,21 +96,81 @@ namespace VibeDesk
             return id;
         }
 
-        private void FindLocalIp()
+        private void FindRealLocalIp()
         {
             try
             {
-                var host = Dns.GetHostEntry(Dns.GetHostName());
-                var ip = host.AddressList.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a));
-                if (ip != null)
+                // Method 1: Query OS routing table for outgoing internet interface
+                using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
                 {
-                    _myLocalIp = ip.ToString();
-                    TxtLocalIp.Text = $"{_myLocalIp}:{_host.Port}";
+                    socket.Connect("8.8.8.8", 65530);
+                    if (socket.LocalEndPoint is IPEndPoint endPoint && !IPAddress.IsLoopback(endPoint.Address))
+                    {
+                        _myLocalIp = endPoint.Address.ToString();
+                        TxtLocalIp.Text = $"{_myLocalIp}:{_host.Port}";
+                        AppendLog($"🌐 Физический LAN IP определен через таблицу маршрутизации: {_myLocalIp}");
+                        return;
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                TxtLocalIp.Text = "127.0.0.1:15890";
+                AppendLog($"[Сеть] Маршрутизация: {ex.Message}");
+            }
+
+            // Method 2: Scan physical interfaces, ignoring virtual/Docker/WSL
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != OperationalStatus.Up || ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                        continue;
+
+                    string name = ni.Name.ToLower();
+                    string desc = ni.Description.ToLower();
+                    if (name.Contains("vethernet") || name.Contains("wsl") || name.Contains("docker") ||
+                        name.Contains("virtual") || desc.Contains("virtual") || desc.Contains("hyper-v") ||
+                        desc.Contains("wsl") || desc.Contains("docker") || desc.Contains("vmware"))
+                    {
+                        continue;
+                    }
+
+                    var ipProps = ni.GetIPProperties();
+                    foreach (var addr in ipProps.UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(addr.Address))
+                        {
+                            _myLocalIp = addr.Address.ToString();
+                            TxtLocalIp.Text = $"{_myLocalIp}:{_host.Port}";
+                            AppendLog($"🌐 Физический LAN IP найден через интерфейс '{ni.Name}': {_myLocalIp}");
+                            return;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            TxtLocalIp.Text = "127.0.0.1:15890";
+            AppendLog("⚠️ Не удалось определить LAN IP, используется 127.0.0.1");
+        }
+
+        private async Task ResolveStunAsync()
+        {
+            TxtPublicEndpoint.Text = "STUN поиск...";
+            AppendLog("🔍 Запрос STUN (определение внешнего IP и порта)...");
+
+            var (ep, msg) = await StunResolver.ResolveAsync(_host.Port);
+            _myPublicEndPoint = ep;
+
+            if (_myPublicEndPoint != null)
+            {
+                TxtPublicEndpoint.Text = $"{_myPublicEndPoint.Address}:{_myPublicEndPoint.Port}";
+                AppendLog($"✅ {msg}");
+            }
+            else
+            {
+                TxtPublicEndpoint.Text = "Локальный режим";
+                AppendLog($"⚠️ {msg}");
             }
         }
 
@@ -115,6 +183,7 @@ namespace VibeDesk
                     TxtHostStatus.Text = _host.HasClient ? "Сеанс активен" : "Ожидание подключения...";
                     IndicatorHost.Background = _host.HasClient ? new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)) : new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
                     TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({_targetFps} FPS)";
+                    AppendLog($"[Хост] {msg}");
                 });
             };
 
@@ -123,48 +192,53 @@ namespace VibeDesk
             {
                 TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({_targetFps} FPS)";
                 TxtHostStatus.Text = "Ожидание подключения...";
+                AppendLog($"⚡ Хост слушает UDP порт {_host.Port}. Захват: {_host.ActiveCaptureEngine}");
             }
             else
             {
                 TxtHostStatus.Text = "Ошибка запуска хоста";
                 IndicatorHost.Background = new SolidColorBrush(Color.FromRgb(0xD5, 0x00, 0x00));
+                AppendLog($"❌ Не удалось запустить хост на порту {_host.Port}!");
             }
         }
 
-        private async Task InitializeP2PAsync()
+        private async Task InitializeSignalingAsync()
         {
-            TxtPublicEndpoint.Text = "STUN поиск...";
+            AppendLog("📡 Подключение к глобальной сети VibeDesk (MQTT)...");
 
-            // 1. Discover public IP:Port via STUN
-            _myPublicEndPoint = await StunResolver.QueryPublicEndPointAsync(_host.Port);
-            if (_myPublicEndPoint != null)
-            {
-                TxtPublicEndpoint.Text = $"{_myPublicEndPoint.Address}:{_myPublicEndPoint.Port}";
-            }
-            else
-            {
-                TxtPublicEndpoint.Text = "Локальный режим";
-            }
-
-            // 2. Register with signaling broker
             _signaling.OnLog += log =>
             {
-                Dispatcher.InvokeAsync(() => AppendClientLog(log));
+                Dispatcher.InvokeAsync(() => AppendLog($"[Signaling] {log}"));
             };
 
             await _signaling.RegisterHostAsync(_myDeviceId, clientReq =>
             {
-                // Host receives connection request from remote client
                 _ = Dispatcher.InvokeAsync(() =>
                 {
-                    AppendClientLog($"Запрос подключения от пира {clientReq.DeviceId}");
+                    AppendLog($"📩 Получен запрос на сеанс от пира ID {clientReq.DeviceId}");
+                    AppendLog($"   -> Клиент локальный IP: {clientReq.LocalIp}:{clientReq.LocalPort}");
+                    AppendLog($"   -> Клиент публичный IP: {clientReq.PublicIp}:{clientReq.PublicPort}");
                 });
+
+                // Host immediately punches UDP packets towards client to open router NAT!
+                if (IPAddress.TryParse(clientReq.PublicIp, out var clientPubIp) && clientReq.PublicPort > 0)
+                {
+                    var pubTarget = new IPEndPoint(clientPubIp, clientReq.PublicPort);
+                    _host.PunchNat(pubTarget);
+                    _ = Dispatcher.InvokeAsync(() => AppendLog($"🥊 [Хост] Отправлен встречный UDP-punch на {pubTarget}"));
+                }
+
+                if (IPAddress.TryParse(clientReq.LocalIp, out var clientLocIp) && clientReq.LocalPort > 0)
+                {
+                    var locTarget = new IPEndPoint(clientLocIp, clientReq.LocalPort);
+                    _host.PunchNat(locTarget);
+                }
 
                 var responseInfo = new PeerEndpointInfo
                 {
                     DeviceId = _myDeviceId,
-                    PublicIp = _myPublicEndPoint?.Address.ToString() ?? _myLocalIp,
-                    PublicPort = _myPublicEndPoint?.Port ?? _host.Port,
+                    PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
+                    PublicPort = _myPublicEndPoint?.Port ?? 0,
                     LocalIp = _myLocalIp,
                     LocalPort = _host.Port
                 };
@@ -183,100 +257,155 @@ namespace VibeDesk
             }
 
             BtnConnect.IsEnabled = false;
-            AppendClientLog($"Инициализация подключения к {target}...");
+            AppendLog($"\n--- Запуск подключения к: {target} ---");
 
             try
             {
                 string connectIp = target;
                 int connectPort = VibeHost.DefaultPort;
 
-                // Check if target is a 6-digit Vibe ID
+                // Scenario A: 6-digit Vibe ID
                 if (target.Length == 6 && int.TryParse(target, out _))
                 {
-                    AppendClientLog($"Поиск устройства {FormatId(target)} в глобальной сети...");
+                    AppendLog($"🔎 Запрос координат хоста с ID {FormatId(target)} через глобальную сеть...");
+
+                    // If client doesn't have public endpoint yet, quick resolve
+                    if (_myPublicEndPoint == null)
+                    {
+                        var (cEp, _) = await StunResolver.ResolveAsync(0);
+                        _myPublicEndPoint = cEp;
+                    }
 
                     var myInfo = new PeerEndpointInfo
                     {
                         DeviceId = _myDeviceId,
-                        PublicIp = _myPublicEndPoint?.Address.ToString() ?? _myLocalIp,
+                        PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
                         PublicPort = _myPublicEndPoint?.Port ?? 0,
                         LocalIp = _myLocalIp,
-                        LocalPort = _host.Port
+                        LocalPort = 15891
                     };
 
-                    var hostInfo = await _signaling.RequestHostEndpointsAsync(target, myInfo, timeoutMs: 6000);
+                    AppendLog($"📤 Отправка своих координат хосту (Локальный: {myInfo.LocalIp}, Внешний: {myInfo.PublicIp}:{myInfo.PublicPort})...");
+
+                    var hostInfo = await _signaling.RequestHostEndpointsAsync(target, myInfo, timeoutMs: 7000);
 
                     if (hostInfo == null)
                     {
-                        AppendClientLog($"Устройство {FormatId(target)} не найдено или не в сети.");
-                        MessageBox.Show(this, $"Устройство с ID {FormatId(target)} не отвечает.\nУбедитесь, что VibeDesk запущен на удаленном ПК.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                        AppendLog($"❌ Хост с ID {FormatId(target)} не ответил. Проверьте, запущен ли VibeDesk на удаленном компьютере.");
+                        MessageBox.Show(this, $"Устройство с ID {FormatId(target)} не отвечает.\n\nУбедитесь, что VibeDesk запущен на удаленном ПК и подключен к сети.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
                         BtnConnect.IsEnabled = true;
                         return;
                     }
 
-                    AppendClientLog($"Пир найден! Локальный IP: {hostInfo.LocalIp}, Публичный: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
+                    AppendLog($"📥 Ответ от хоста {FormatId(target)} получен!");
+                    AppendLog($"   -> Локальный IP хоста: {hostInfo.LocalIp}:{hostInfo.LocalPort}");
+                    AppendLog($"   -> Внешний IP хоста: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
 
-                    // If same local network / Wi-Fi subnet, use direct LAN IP for best performance
+                    // Check if both devices are in the same local subnet (on the couch)
                     if (IsSameSubnet(_myLocalIp, hostInfo.LocalIp))
                     {
                         connectIp = hostInfo.LocalIp;
-                        connectPort = hostInfo.LocalPort;
-                        AppendClientLog($"Обнаружена локальная сеть (диван)! Подключение по LAN: {connectIp}:{connectPort}");
+                        connectPort = hostInfo.LocalPort > 0 ? hostInfo.LocalPort : VibeHost.DefaultPort;
+                        AppendLog($"🛋️ Обнаружена общая локальная сеть (диван)! Прямое подключение по LAN: {connectIp}:{connectPort}");
                     }
                     else
                     {
-                        connectIp = !string.IsNullOrEmpty(hostInfo.PublicIp) ? hostInfo.PublicIp : hostInfo.LocalIp;
-                        connectPort = hostInfo.PublicPort > 0 ? hostInfo.PublicPort : hostInfo.LocalPort;
-                        AppendClientLog($"Подключение через Интернет (P2P): {connectIp}:{connectPort}");
+                        // Connecting across internet
+                        if (!string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0)
+                        {
+                            connectIp = hostInfo.PublicIp;
+                            connectPort = hostInfo.PublicPort;
+                            AppendLog($"🌐 Подключение через Интернет (P2P): {connectIp}:{connectPort}");
+                        }
+                        else
+                        {
+                            AppendLog("⚠️ Внимание: у удаленного ПК не определен внешний публичный IP (STUN). Попытка подключения по локальному адресу...");
+                            connectIp = hostInfo.LocalIp;
+                            connectPort = hostInfo.LocalPort > 0 ? hostInfo.LocalPort : VibeHost.DefaultPort;
+                        }
                     }
                 }
                 else if (target.Contains(':'))
                 {
                     var parts = target.Split(':');
                     connectIp = parts[0];
-                    if (int.TryParse(parts[1], out int p))
-                    {
-                        connectPort = p;
-                    }
+                    if (int.TryParse(parts[1], out int p)) connectPort = p;
+                    AppendLog($"🎯 Прямой режим IP: {connectIp}:{connectPort}");
+                }
+                else
+                {
+                    connectIp = target;
+                    AppendLog($"🎯 Прямой режим IP (порт по умолчанию): {connectIp}:{connectPort}");
                 }
 
-                // Start Client connection
+                // Initialize client
                 var client = new VibeClient();
                 var tcs = new TaskCompletionSource<bool>();
 
-                client.OnConnected += () => tcs.TrySetResult(true);
-                client.OnDisconnected += () => tcs.TrySetResult(false);
-                client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendClientLog(status));
+                client.OnConnected += () =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        AppendLog("🎉 Соединение успешно установлено! Видеопоток активен.");
+                        tcs.TrySetResult(true);
+                    });
+                };
 
+                client.OnDisconnected += () =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        AppendLog("🔌 Соединение разорвано.");
+                        tcs.TrySetResult(false);
+                    });
+                };
+
+                client.OnStatusChanged += status =>
+                {
+                    Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
+                };
+
+                // Punch packets towards target
+                if (IPAddress.TryParse(connectIp, out var targetIp))
+                {
+                    var targetEp = new IPEndPoint(targetIp, connectPort);
+                    AppendLog($"🥊 [Клиент] Отправка UDP Punch на {targetEp}...");
+                    client.PunchNat(targetEp);
+                }
+
+                AppendLog($"⏳ Отправка запроса на подключение к {connectIp}:{connectPort}...");
                 bool initiated = client.Connect(connectIp, connectPort);
                 if (!initiated)
                 {
-                    AppendClientLog("Ошибка инициализации сокета.");
+                    AppendLog("❌ Ошибка запуска клиентского сетевого сокета.");
                     client.Dispose();
                     BtnConnect.IsEnabled = true;
                     return;
                 }
 
-                var timeoutTask = Task.Delay(5000);
+                var timeoutTask = Task.Delay(6000);
                 var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
 
                 if (completedTask == tcs.Task && tcs.Task.Result)
                 {
-                    AppendClientLog("Сеанс успешно установлен!");
                     var sessionWindow = new RemoteSessionWindow(client);
                     sessionWindow.Owner = this;
                     sessionWindow.Show();
                 }
                 else
                 {
-                    AppendClientLog("Тайм-аут подключения. Удаленный хост не отвечает.");
+                    AppendLog($"❌ Не удалось установить прямое соединение с {connectIp}:{connectPort}.");
+                    AppendLog("   Возможные причины:");
+                    AppendLog("   1. Роутер блокирует входящий UDP-трафик (симметричный NAT).");
+                    AppendLog("   2. Брандмауэр Windows на удаленном ПК блокирует VibeDesk.");
+                    AppendLog("   3. Удаленный хост находится за серым IP без открытого порта.");
                     client.Dispose();
-                    MessageBox.Show(this, "Не удалось установить прямое соединение с удаленным ПК.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, $"Не удалось подключиться к {connectIp}:{connectPort}.\n\nПодробности смотрите в журнале событий справа.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)
             {
-                AppendClientLog($"Ошибка подключения: {ex.Message}");
+                AppendLog($"❌ Ошибка: {ex.Message}");
                 MessageBox.Show(this, $"Ошибка: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
@@ -300,10 +429,26 @@ namespace VibeDesk
             return false;
         }
 
-        private void AppendClientLog(string text)
+        private void AppendLog(string text)
         {
             string time = DateTime.Now.ToString("HH:mm:ss");
-            TxtClientLog.Text = $"[{time}] {text}\n" + TxtClientLog.Text;
+            TxtClientLog.AppendText($"[{time}] {text}\n");
+            ScrollLogs.ScrollToEnd();
+        }
+
+        private void BtnCopyLogs_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Clipboard.SetText(TxtClientLog.Text);
+                MessageBox.Show(this, "Журнал скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch { }
+        }
+
+        private void BtnClearLogs_Click(object sender, RoutedEventArgs e)
+        {
+            TxtClientLog.Clear();
         }
 
         private void BtnCopyId_Click(object sender, RoutedEventArgs e)
@@ -326,14 +471,7 @@ namespace VibeDesk
 
         private void CmbFps_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (CmbFps.SelectedIndex == 0)
-            {
-                _targetFps = 60;
-            }
-            else
-            {
-                _targetFps = 30;
-            }
+            _targetFps = CmbFps.SelectedIndex == 0 ? 60 : 30;
 
             if (_host != null && IsLoaded)
             {
