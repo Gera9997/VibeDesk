@@ -1,0 +1,13 @@
+## .NET Core
+bin/
+obj/
+publish/
+*.user
+*.userosscache
+*.sln.docstates
+
+## Visual Studio
+.vs/
+*.suo
+*.userprefs
+*.ide/
