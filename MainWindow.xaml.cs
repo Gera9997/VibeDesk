@@ -21,6 +21,7 @@ namespace VibeDesk
         private readonly VibeHost _host;
         private readonly P2PSignaling _signaling;
         private IPEndPoint? _myPublicEndPoint;
+        private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
         private int _targetFps = 60;
 
@@ -33,6 +34,11 @@ namespace VibeDesk
 
             _host = new VibeHost(VibeHost.DefaultPort);
             _signaling = new P2PSignaling();
+
+            _host.OnPunchReceived += ep =>
+            {
+                _lastPunchReceivedFrom = ep;
+            };
 
             Loaded += MainWindow_Loaded;
             Closed += MainWindow_Closed;
@@ -293,8 +299,19 @@ namespace VibeDesk
 
                     bool connected = false;
 
+                    // 0. Priority: If we already received an incoming UDP punch packet directly from the host!
+                    if (_lastPunchReceivedFrom != null)
+                    {
+                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {_lastPunchReceivedFrom}! Мгновенное подключение...");
+                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 2500);
+                        if (connected)
+                        {
+                            AppendLog($"⚡ Успешно подключено по прямому каналу {_lastPunchReceivedFrom}!");
+                        }
+                    }
+
                     // 1. First: Test Direct LAN connection (optimal for the couch)
-                    if (!string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1")
+                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1")
                     {
                         AppendLog($"🛋️ Проверка прямого LAN-подключения (диван) к {hostInfo.LocalIp}:{hostInfo.LocalPort}...");
                         connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 1800);

@@ -31,6 +31,7 @@ namespace VibeDesk.Network
         public event Action<NetPeer>? OnClientConnected;
         public event Action<NetPeer>? OnClientDisconnected;
         public event Action<string>? OnClipboardReceived;
+        public event Action<IPEndPoint>? OnPunchReceived;
 
         public int Port { get; private set; }
         public int ScreenWidth => _captureManager?.ScreenWidth ?? 1920;
@@ -59,6 +60,7 @@ namespace VibeDesk.Network
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
             {
                 OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
+                OnPunchReceived?.Invoke(point);
             };
 
             _listener.ConnectionRequestEvent += request =>
