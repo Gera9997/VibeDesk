@@ -70,6 +70,8 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}"/>
+
         <!-- Modern Input TextBox -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="#0D0E13"/>
@@ -119,7 +121,7 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnCheckUpdate" Style="{StaticResource ActionButton}" Content="🔄 Обновления" Padding="10,4" Margin="0,0,12,0" Click="BtnCheckUpdate_Click" ToolTip="Проверить наличие обновлений на GitHub"/>
+                    <Button x:Name="BtnCheckUpdate" Style="{StaticResource SecondaryButton}" Content="🔄 Обновления" Padding="10,4" Margin="0,0,12,0" Click="BtnCheckUpdate_Click" ToolTip="Проверить наличие обновлений на GitHub"/>
                     <TextBlock Text="Без ограничений и подписок" Foreground="#7A8098" FontSize="12" VerticalAlignment="Center"/>
                 </StackPanel>
             </DockPanel>
@@ -130,7 +132,7 @@
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <Button x:Name="BtnApplyUpdate" Style="{StaticResource PrimaryButton}" Content="⚡ Обновить сейчас" Padding="12,5" Margin="8,0,0,0" Click="BtnApplyUpdate_Click"/>
-                    <Button Style="{StaticResource ActionButton}" Content="✕" Width="26" Height="26" Padding="0" Margin="6,0,0,0" Click="BtnCloseUpdateBanner_Click" ToolTip="Скрыть"/>
+                    <Button Style="{StaticResource SecondaryButton}" Content="✕" Width="26" Height="26" Padding="0" Margin="6,0,0,0" Click="BtnCloseUpdateBanner_Click" ToolTip="Скрыть"/>
                 </StackPanel>
 
                 <StackPanel VerticalAlignment="Center">
