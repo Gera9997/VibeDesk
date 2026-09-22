@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
+using VibeDesk.Native;
 
 namespace VibeDesk.Capture
 {
@@ -12,14 +14,11 @@ namespace VibeDesk.Capture
         private readonly EncoderParameters _encoderParams;
         private readonly MemoryStream _compressionStream = new(1024 * 512);
 
-        private long _lastFrameHash = 0;
-        private int _consecutiveIdenticalFrames = 0;
-
         public string ActiveEngineName => _capturer.Name;
         public int ScreenWidth => _capturer.ScreenWidth;
         public int ScreenHeight => _capturer.ScreenHeight;
 
-        public ScreenCaptureManager(int jpegQuality = 70)
+        public ScreenCaptureManager(int jpegQuality = 65)
         {
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
             _encoderParams = new EncoderParameters(1);
@@ -47,8 +46,7 @@ namespace VibeDesk.Capture
 
         public void ResetForceFrame()
         {
-            _lastFrameHash = 0;
-            _consecutiveIdenticalFrames = 0;
+            // Ready for immediate next frame
         }
 
         public unsafe byte[]? CaptureAndEncode(bool forceFrame = false)
@@ -69,66 +67,34 @@ namespace VibeDesk.Capture
                 if (bmp == null) return null;
             }
 
-            // Quick sample hash to check if desktop changed (sample 64 points)
-            if (!forceFrame)
-            {
-                long sampleHash = CalculateSampleHash(bmp);
-                if (sampleHash == _lastFrameHash)
-                {
-                    _consecutiveIdenticalFrames++;
-                    // Send at least 1 frame every 30 skipped frames as a keepalive
-                    if (_consecutiveIdenticalFrames < 30)
-                    {
-                        return null; // Screen unchanged, skip frame
-                    }
-                }
-                _lastFrameHash = sampleHash;
-                _consecutiveIdenticalFrames = 0;
-            }
+            // Draw host's real cursor onto the bitmap so it's visible in remote stream
+            DrawCursor(bmp);
 
             _compressionStream.SetLength(0);
             bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
             return _compressionStream.ToArray();
         }
 
-        private static unsafe long CalculateSampleHash(Bitmap bmp)
+        private static void DrawCursor(Bitmap bmp)
         {
             try
             {
-                int w = bmp.Width;
-                int h = bmp.Height;
-                if (w < 10 || h < 10) return 0;
-
-                var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
-                long hash = 17;
-                try
+                var ci = new Win32.CURSORINFO { cbSize = Marshal.SizeOf<Win32.CURSORINFO>() };
+                if (Win32.GetCursorInfo(out ci) && (ci.flags & Win32.CURSOR_SHOWING) != 0 && ci.hCursor != IntPtr.Zero)
                 {
-                    int* ptr = (int*)data.Scan0;
-                    int strideInts = data.Stride / 4;
-                    // Sample a 8x8 grid across the screen
-                    int stepX = w / 8;
-                    int stepY = h / 8;
-
-                    for (int y = 0; y < 8; y++)
+                    using var g = Graphics.FromImage(bmp);
+                    IntPtr hdc = g.GetHdc();
+                    try
                     {
-                        int rowIdx = y * stepY * strideInts;
-                        for (int x = 0; x < 8; x++)
-                        {
-                            int val = ptr[rowIdx + (x * stepX)];
-                            hash = unchecked(hash * 31 + val);
-                        }
+                        Win32.DrawIcon(hdc, ci.ptScreenPos.X, ci.ptScreenPos.Y, ci.hCursor);
+                    }
+                    finally
+                    {
+                        g.ReleaseHdc(hdc);
                     }
                 }
-                finally
-                {
-                    bmp.UnlockBits(data);
-                }
-                return hash;
             }
-            catch
-            {
-                return 0;
-            }
+            catch { }
         }
 
         private static ImageCodecInfo GetEncoder(ImageFormat format)

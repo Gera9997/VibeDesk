@@ -109,6 +109,23 @@ namespace VibeDesk.Native
         public static extern bool GetCursorPos(out POINT lpPoint);
 
         [StructLayout(LayoutKind.Sequential)]
+        public struct CURSORINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hCursor;
+            public POINT ptScreenPos;
+        }
+
+        public const int CURSOR_SHOWING = 0x00000001;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool GetCursorInfo(out CURSORINFO pci);
+
+        [DllImport("user32.dll")]
+        public static extern bool DrawIcon(IntPtr hDC, int X, int Y, IntPtr hIcon);
+
+        [StructLayout(LayoutKind.Sequential)]
         public struct POINT
         {
             public int X;

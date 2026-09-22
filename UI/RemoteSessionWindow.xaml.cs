@@ -43,6 +43,9 @@ namespace VibeDesk.UI
             };
         }
 
+        private volatile BitmapSource? _latestPendingFrame;
+        private int _isRendering = 0;
+
         private void OnFrameReceived(byte[] jpegBytes)
         {
             try
@@ -57,14 +60,30 @@ namespace VibeDesk.UI
                     bitmap.Freeze(); // Enables cross-thread access and high performance
                 }
 
-                Dispatcher.InvokeAsync(() =>
+                _latestPendingFrame = bitmap;
+
+                if (System.Threading.Interlocked.CompareExchange(ref _isRendering, 1, 0) == 0)
                 {
-                    ImgScreen.Source = bitmap;
-                    if (OverlayConnecting.Visibility == Visibility.Visible)
+                    Dispatcher.InvokeAsync(() =>
                     {
-                        OverlayConnecting.Visibility = Visibility.Collapsed;
-                    }
-                }, DispatcherPriority.Render);
+                        try
+                        {
+                            var frame = _latestPendingFrame;
+                            if (frame != null)
+                            {
+                                ImgScreen.Source = frame;
+                                if (OverlayConnecting.Visibility == Visibility.Visible)
+                                {
+                                    OverlayConnecting.Visibility = Visibility.Collapsed;
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            System.Threading.Interlocked.Exchange(ref _isRendering, 0);
+                        }
+                    }, DispatcherPriority.Render);
+                }
             }
             catch (Exception ex)
             {
