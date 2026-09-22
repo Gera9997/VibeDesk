@@ -12,7 +12,8 @@ namespace VibeDesk.Network.Protocol
         Clipboard = 3,
         Ping = 4,
         Pong = 5,
-        ScreenInfo = 6
+        ScreenInfo = 6,
+        StreamSettings = 7
     }
 
     public static class PacketBuilder
@@ -109,6 +110,16 @@ namespace VibeDesk.Network.Protocol
             packet[0] = (byte)PacketType.ScreenInfo;
             BitConverter.TryWriteBytes(packet.AsSpan(1, 4), width);
             BitConverter.TryWriteBytes(packet.AsSpan(5, 4), height);
+            return packet;
+        }
+
+        public static byte[] CreateStreamSettings(float scale, int fps, int quality)
+        {
+            byte[] packet = new byte[1 + 4 + 4 + 4];
+            packet[0] = (byte)PacketType.StreamSettings;
+            BitConverter.TryWriteBytes(packet.AsSpan(1, 4), scale);
+            BitConverter.TryWriteBytes(packet.AsSpan(5, 4), fps);
+            BitConverter.TryWriteBytes(packet.AsSpan(9, 4), quality);
             return packet;
         }
     }

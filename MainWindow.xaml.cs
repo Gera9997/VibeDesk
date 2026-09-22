@@ -24,6 +24,7 @@ namespace VibeDesk
         private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
         private int _targetFps = 60;
+        private float _targetScale = 1.0f;
 
         public MainWindow()
         {
@@ -182,17 +183,17 @@ namespace VibeDesk
                 {
                     TxtHostStatus.Text = _host.HasClient ? "Сеанс активен" : "Ожидание подключения...";
                     IndicatorHost.Background = _host.HasClient ? new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)) : new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
-                    TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({_targetFps} FPS)";
+                    TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)";
                     AppendLog($"[Хост] {msg}");
                 });
             };
 
-            bool started = _host.Start(_targetFps);
+            bool started = _host.Start(_targetFps, jpegQuality: 70, scale: _targetScale);
             if (started)
             {
-                TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({_targetFps} FPS)";
+                TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)";
                 TxtHostStatus.Text = "Ожидание подключения...";
-                AppendLog($"⚡ Хост слушает UDP порт {_host.Port}. Захват: {_host.ActiveCaptureEngine}");
+                AppendLog($"⚡ Хост слушает UDP порт {_host.Port}. Захват: {_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)");
             }
             else
             {
@@ -200,6 +201,35 @@ namespace VibeDesk
                 IndicatorHost.Background = new SolidColorBrush(Color.FromRgb(0xD5, 0x00, 0x00));
                 AppendLog($"❌ Не удалось запустить хост на порту {_host.Port}!");
             }
+        }
+
+        private void CmbResolution_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (CmbResolution == null || _host == null) return;
+            _targetScale = CmbResolution.SelectedIndex switch
+            {
+                0 => 1.0f,   // 100%
+                1 => 0.75f,  // 75%
+                2 => 0.50f,  // 50%
+                3 => 0.33f,  // 33%
+                _ => 1.0f
+            };
+            _host.SetStreamSettings(_targetScale, _targetFps, 70);
+            TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)";
+        }
+
+        private void CmbFps_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (CmbFps == null || _host == null) return;
+            _targetFps = CmbFps.SelectedIndex switch
+            {
+                0 => 120, // 120 FPS
+                1 => 60,  // 60 FPS
+                2 => 30,  // 30 FPS
+                _ => 60
+            };
+            _host.SetStreamSettings(_targetScale, _targetFps, 70);
+            TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)";
         }
 
         private async Task InitializeSignalingAsync()
@@ -484,17 +514,6 @@ namespace VibeDesk
             if (e.Key == Key.Enter)
             {
                 BtnConnect_Click(sender, e);
-            }
-        }
-
-        private void CmbFps_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            _targetFps = CmbFps.SelectedIndex == 0 ? 60 : 30;
-
-            if (_host != null && IsLoaded)
-            {
-                _host.Stop();
-                _host.Start(_targetFps);
             }
         }
     }

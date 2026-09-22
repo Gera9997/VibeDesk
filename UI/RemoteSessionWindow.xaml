@@ -48,7 +48,15 @@
                     <TextBlock x:Name="TxtStats" Text="FPS: 0 | Пинг: 0 мс | 0 Кб/с" Foreground="#7A7A90" FontSize="12" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <TextBlock Text="Режим:" Foreground="#7A7A90" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="CmbLiveMode" Width="150" SelectedIndex="0" SelectionChanged="CmbLiveMode_SelectionChanged" FontSize="11" Margin="0,0,12,0">
+                        <ComboBoxItem Content="🎯 100% Чёткость"/>
+                        <ComboBoxItem Content="⚖️ 75% Баланс"/>
+                        <ComboBoxItem Content="🚀 50% Турбо FPS"/>
+                        <ComboBoxItem Content="⚡ 33% Эконом"/>
+                    </ComboBox>
+
                     <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер обмена" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Ctrl+Shift+Esc" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Win-Key" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows"/>

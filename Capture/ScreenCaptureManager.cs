@@ -14,12 +14,17 @@ namespace VibeDesk.Capture
         private readonly EncoderParameters _encoderParams;
         private readonly MemoryStream _compressionStream = new(1024 * 512);
 
+        private Bitmap? _scaledBitmap;
+        private Graphics? _scaledGraphics;
+
+        public float ResolutionScale { get; private set; } = 1.0f;
         public string ActiveEngineName => _capturer.Name;
         public int ScreenWidth => _capturer.ScreenWidth;
         public int ScreenHeight => _capturer.ScreenHeight;
 
-        public ScreenCaptureManager(int jpegQuality = 65)
+        public ScreenCaptureManager(int jpegQuality = 65, float scale = 1.0f)
         {
+            ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
             _encoderParams = new EncoderParameters(1);
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(jpegQuality, 10, 100));
@@ -42,6 +47,11 @@ namespace VibeDesk.Capture
         public void SetQuality(int quality)
         {
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(quality, 10, 100));
+        }
+
+        public void SetScale(float scale)
+        {
+            ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
         }
 
         public void ResetForceFrame()
@@ -71,7 +81,34 @@ namespace VibeDesk.Capture
             DrawCursor(bmp);
 
             _compressionStream.SetLength(0);
-            bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
+
+            // High-speed downscaling if resolution scale is less than 1.0
+            if (ResolutionScale < 0.99f)
+            {
+                int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
+                int targetH = Math.Max(16, ((int)(bmp.Height * ResolutionScale)) / 2 * 2);
+
+                if (_scaledBitmap == null || _scaledBitmap.Width != targetW || _scaledBitmap.Height != targetH)
+                {
+                    _scaledGraphics?.Dispose();
+                    _scaledBitmap?.Dispose();
+
+                    _scaledBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
+                    _scaledGraphics = Graphics.FromImage(_scaledBitmap);
+                    _scaledGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+                    _scaledGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                    _scaledGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
+                    _scaledGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+                }
+
+                _scaledGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+                _scaledBitmap!.Save(_compressionStream, _jpegCodec, _encoderParams);
+            }
+            else
+            {
+                bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
+            }
+
             return _compressionStream.ToArray();
         }
 
@@ -112,6 +149,11 @@ namespace VibeDesk.Capture
 
         public void Dispose()
         {
+            _scaledGraphics?.Dispose();
+            _scaledGraphics = null;
+            _scaledBitmap?.Dispose();
+            _scaledBitmap = null;
+
             _capturer.Dispose();
             _encoderParams.Dispose();
             _compressionStream.Dispose();

@@ -178,13 +178,25 @@
 
                     <!-- Quality / FPS selector -->
                     <Border Grid.Row="3" Background="#13151D" CornerRadius="6" Padding="10" Margin="0,10,0,0">
-                        <DockPanel>
-                            <TextBlock Text="Частота кадров:" Foreground="#858B9E" FontSize="12" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="CmbFps" Width="100" HorizontalAlignment="Right" SelectedIndex="0" SelectionChanged="CmbFps_SelectionChanged">
-                                <ComboBoxItem Content="60 FPS"/>
-                                <ComboBoxItem Content="30 FPS"/>
-                            </ComboBox>
-                        </DockPanel>
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,8">
+                                <TextBlock Text="Масштаб разрешения:" Foreground="#858B9E" FontSize="12" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="CmbResolution" Width="180" HorizontalAlignment="Right" SelectedIndex="0" SelectionChanged="CmbResolution_SelectionChanged">
+                                    <ComboBoxItem Content="100% (Исходное 1080p)"/>
+                                    <ComboBoxItem Content="75% (Баланс 810p)"/>
+                                    <ComboBoxItem Content="50% (540p Турбо FPS)"/>
+                                    <ComboBoxItem Content="33% (360p Эконом)"/>
+                                </ComboBox>
+                            </DockPanel>
+                            <DockPanel>
+                                <TextBlock Text="Частота кадров (FPS):" Foreground="#858B9E" FontSize="12" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="CmbFps" Width="180" HorizontalAlignment="Right" SelectedIndex="1" SelectionChanged="CmbFps_SelectionChanged">
+                                    <ComboBoxItem Content="120 FPS (Макс. плавность)"/>
+                                    <ComboBoxItem Content="60 FPS (Стандарт)"/>
+                                    <ComboBoxItem Content="30 FPS (Эконом)"/>
+                                </ComboBox>
+                            </DockPanel>
+                        </StackPanel>
                     </Border>
                 </Grid>
             </Border>

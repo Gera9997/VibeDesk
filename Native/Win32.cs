@@ -131,5 +131,11 @@ namespace VibeDesk.Native
             public int X;
             public int Y;
         }
+
+        [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod", SetLastError = true)]
+        public static extern uint timeBeginPeriod(uint uMilliseconds);
+
+        [DllImport("winmm.dll", EntryPoint = "timeEndPeriod", SetLastError = true)]
+        public static extern uint timeEndPeriod(uint uMilliseconds);
     }
 }

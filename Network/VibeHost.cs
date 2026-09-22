@@ -9,6 +9,7 @@ using LiteNetLib;
 using LiteNetLib.Utils;
 using VibeDesk.Capture;
 using VibeDesk.Input;
+using VibeDesk.Native;
 using VibeDesk.Network.Protocol;
 
 namespace VibeDesk.Network
@@ -25,6 +26,7 @@ namespace VibeDesk.Network
 
         private Thread? _streamingThread;
         private volatile bool _isRunning = false;
+        private volatile int _targetFps = 60;
         private uint _frameCounter = 0;
 
         public event Action<string>? OnStatusChanged;
@@ -60,7 +62,6 @@ namespace VibeDesk.Network
 
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
             {
-                OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
                 OnPunchReceived?.Invoke(point);
             };
 
@@ -79,17 +80,11 @@ namespace VibeDesk.Network
             _listener.PeerConnectedEvent += peer =>
             {
                 _connectedPeer = peer;
-                OnStatusChanged?.Invoke($"Клиент подключен: {peer.Address}");
+                OnStatusChanged?.Invoke($"Клиент подключен: {peer.Address}:{peer.Port}");
                 OnClientConnected?.Invoke(peer);
 
-                _captureManager?.ResetForceFrame();
-
-                // Send initial screen dimensions
-                if (_captureManager != null)
-                {
-                    byte[] info = PacketBuilder.CreateScreenInfo(_captureManager.ScreenWidth, _captureManager.ScreenHeight);
-                    peer.Send(info, DeliveryMethod.ReliableOrdered);
-                }
+                // Send screen geometry
+                peer.Send(PacketBuilder.CreateScreenInfo(ScreenWidth, ScreenHeight), DeliveryMethod.ReliableOrdered);
             };
 
             _listener.PeerDisconnectedEvent += (peer, info) =>
@@ -108,13 +103,22 @@ namespace VibeDesk.Network
             };
         }
 
-        public bool Start(int targetFps = 60, int jpegQuality = 70)
+        public void SetStreamSettings(float scale, int targetFps, int quality)
+        {
+            _targetFps = Math.Clamp(targetFps, 15, 120);
+            _captureManager?.SetScale(scale);
+            _captureManager?.SetQuality(quality);
+            OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
+        }
+
+        public bool Start(int targetFps = 60, int jpegQuality = 70, float scale = 1.0f)
         {
             if (_isRunning) return true;
 
             try
             {
-                _captureManager = new ScreenCaptureManager(jpegQuality);
+                _targetFps = Math.Clamp(targetFps, 15, 120);
+                _captureManager = new ScreenCaptureManager(jpegQuality, scale);
             }
             catch (Exception ex)
             {
@@ -128,8 +132,11 @@ namespace VibeDesk.Network
                 return false;
             }
 
+            // Enable 1ms multimedia timer resolution on Windows for precise 60-120 FPS
+            try { Win32.timeBeginPeriod(1); } catch { }
+
             _isRunning = true;
-            _streamingThread = new Thread(() => StreamingLoop(targetFps))
+            _streamingThread = new Thread(StreamingLoop)
             {
                 IsBackground = true,
                 Priority = ThreadPriority.AboveNormal,
@@ -137,7 +144,7 @@ namespace VibeDesk.Network
             };
             _streamingThread.Start();
 
-            OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок захвата: {_captureManager.ActiveEngineName}");
+            OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок: {_captureManager.ActiveEngineName}, FPS: {_targetFps}");
             return true;
         }
 
@@ -149,12 +156,14 @@ namespace VibeDesk.Network
             _captureManager?.Dispose();
             _captureManager = null;
             _connectedPeer = null;
+
+            try { Win32.timeEndPeriod(1); } catch { }
+
             OnStatusChanged?.Invoke("Хост остановлен.");
         }
 
-        private void StreamingLoop(int targetFps)
+        private void StreamingLoop()
         {
-            long frameIntervalMs = 1000 / targetFps;
             var stopwatch = new Stopwatch();
             var fpsStopwatch = Stopwatch.StartNew();
             int framesThisSecond = 0;
@@ -163,6 +172,7 @@ namespace VibeDesk.Network
             while (_isRunning)
             {
                 stopwatch.Restart();
+                long frameIntervalMs = Math.Max(1, 1000 / _targetFps);
 
                 try
                 {
@@ -246,6 +256,16 @@ namespace VibeDesk.Network
                     {
                         long ticks = reader.GetLong();
                         peer.Send(PacketBuilder.CreatePong(ticks), DeliveryMethod.Unreliable);
+                    }
+                    break;
+
+                case PacketType.StreamSettings:
+                    if (reader.AvailableBytes >= 12)
+                    {
+                        float scale = reader.GetFloat();
+                        int fps = reader.GetInt();
+                        int quality = reader.GetInt();
+                        SetStreamSettings(scale, fps, quality);
                     }
                     break;
             }

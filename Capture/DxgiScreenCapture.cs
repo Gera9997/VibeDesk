@@ -106,7 +106,7 @@ namespace VibeDesk.Capture
 
             try
             {
-                var acquireResult = _deskDupl!.AcquireNextFrame(20, out _, out var desktopResource);
+                var acquireResult = _deskDupl!.AcquireNextFrame(2, out _, out var desktopResource);
 
                 if (acquireResult.Failure)
                 {

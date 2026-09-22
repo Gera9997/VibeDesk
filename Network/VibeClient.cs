@@ -271,6 +271,15 @@ namespace VibeDesk.Network
             }
         }
 
+        public void SendStreamSettings(float scale, int fps, int quality)
+        {
+            if (IsConnected)
+            {
+                byte[] packet = PacketBuilder.CreateStreamSettings(scale, fps, quality);
+                _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
         public void Dispose()
         {
             Disconnect();

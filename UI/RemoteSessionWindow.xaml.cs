@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -211,6 +212,22 @@ namespace VibeDesk.UI
         private void BtnFullscreen_Click(object sender, RoutedEventArgs e)
         {
             ToggleFullscreen();
+        }
+
+        private void CmbLiveMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (CmbLiveMode == null || !_client.IsConnected) return;
+
+            (float scale, int fps, int quality) = CmbLiveMode.SelectedIndex switch
+            {
+                0 => (1.0f, 60, 75),   // 100% Четкость
+                1 => (0.75f, 60, 70),  // 75% Баланс
+                2 => (0.50f, 60, 60),  // 50% Турбо FPS
+                3 => (0.33f, 30, 50),  // 33% Эконом
+                _ => (1.0f, 60, 70)
+            };
+
+            _client.SendStreamSettings(scale, fps, quality);
         }
 
         private void ToggleFullscreen()
