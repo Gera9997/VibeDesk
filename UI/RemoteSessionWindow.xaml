@@ -74,7 +74,7 @@
             <Border x:Name="OverlayConnecting" Background="#CC0D0D11" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                     <ProgressBar IsIndeterminate="True" Width="200" Height="4" Foreground="#00E5FF" Background="#2A2A36" BorderThickness="0"/>
-                    <TextBlock Text="Ожидание первого кадра..." Foreground="#A0A0B0" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="TxtConnectingStatus" Text="Ожидание первого кадра..." Foreground="#A0A0B0" Margin="0,12,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Border>
         </Grid>

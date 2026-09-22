@@ -81,6 +81,8 @@ namespace VibeDesk.Network
                 OnStatusChanged?.Invoke($"Клиент подключен: {peer.Address}");
                 OnClientConnected?.Invoke(peer);
 
+                _captureManager?.ResetForceFrame();
+
                 // Send initial screen dimensions
                 if (_captureManager != null)
                 {
@@ -161,37 +163,46 @@ namespace VibeDesk.Network
             {
                 stopwatch.Restart();
 
-                if (fpsStopwatch.ElapsedMilliseconds >= 1000)
+                try
                 {
-                    CurrentFps = framesThisSecond;
-                    OutgoingKbps = (bytesSentThisSecond * 8.0) / 1024.0;
-                    framesThisSecond = 0;
-                    bytesSentThisSecond = 0;
-                    fpsStopwatch.Restart();
-                }
+                    _netServer.PollEvents();
 
-                if (_connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected && _captureManager != null)
-                {
-                    byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
-                    if (frameData != null && frameData.Length > 0)
+                    if (fpsStopwatch.ElapsedMilliseconds >= 1000)
                     {
-                        uint frameId = unchecked(++_frameCounter);
-                        int totalLength = frameData.Length;
-                        int chunkSize = PacketBuilder.MaxChunkPayloadSize;
-                        ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
-
-                        for (ushort i = 0; i < totalChunks; i++)
-                        {
-                            int offset = i * chunkSize;
-                            int length = Math.Min(chunkSize, totalLength - offset);
-                            byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
-
-                            _connectedPeer.Send(chunkPacket, DeliveryMethod.Unreliable);
-                            bytesSentThisSecond += chunkPacket.Length;
-                        }
-
-                        framesThisSecond++;
+                        CurrentFps = framesThisSecond;
+                        OutgoingKbps = (bytesSentThisSecond * 8.0) / 1024.0;
+                        framesThisSecond = 0;
+                        bytesSentThisSecond = 0;
+                        fpsStopwatch.Restart();
                     }
+
+                    if (_connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected && _captureManager != null)
+                    {
+                        byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
+                        if (frameData != null && frameData.Length > 0)
+                        {
+                            uint frameId = unchecked(++_frameCounter);
+                            int totalLength = frameData.Length;
+                            int chunkSize = PacketBuilder.MaxChunkPayloadSize;
+                            ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+
+                            for (ushort i = 0; i < totalChunks; i++)
+                            {
+                                int offset = i * chunkSize;
+                                int length = Math.Min(chunkSize, totalLength - offset);
+                                byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
+
+                                _connectedPeer.Send(chunkPacket, DeliveryMethod.ReliableOrdered);
+                                bytesSentThisSecond += chunkPacket.Length;
+                            }
+
+                            framesThisSecond++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged?.Invoke($"[Ошибка захвата/стрима] {ex.Message}");
                 }
 
                 long elapsed = stopwatch.ElapsedMilliseconds;

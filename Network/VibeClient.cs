@@ -149,23 +149,29 @@ namespace VibeDesk.Network
         {
             while (_isRunning)
             {
-                if (_fpsStopwatch.ElapsedMilliseconds >= 1000)
+                try
                 {
-                    CurrentFps = _framesThisSecond;
-                    IncomingKbps = (_bytesReceivedThisSecond * 8.0) / 1024.0;
-                    _framesThisSecond = 0;
-                    _bytesReceivedThisSecond = 0;
-                    _fpsStopwatch.Restart();
+                    _netClient.PollEvents();
 
-                    // Send periodic ping every 1 second
-                    if (IsConnected)
+                    if (_fpsStopwatch.ElapsedMilliseconds >= 1000)
                     {
-                        _lastPingSendTicks = Stopwatch.GetTimestamp();
-                        _serverPeer!.Send(PacketBuilder.CreatePing(_lastPingSendTicks), DeliveryMethod.Unreliable);
+                        CurrentFps = _framesThisSecond;
+                        IncomingKbps = (_bytesReceivedThisSecond * 8.0) / 1024.0;
+                        _framesThisSecond = 0;
+                        _bytesReceivedThisSecond = 0;
+                        _fpsStopwatch.Restart();
+
+                        // Send periodic ping every 1 second
+                        if (IsConnected)
+                        {
+                            _lastPingSendTicks = Stopwatch.GetTimestamp();
+                            _serverPeer!.Send(PacketBuilder.CreatePing(_lastPingSendTicks), DeliveryMethod.ReliableOrdered);
+                        }
                     }
                 }
+                catch { }
 
-                Thread.Sleep(10);
+                Thread.Sleep(5);
             }
         }
 

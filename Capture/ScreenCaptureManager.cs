@@ -45,6 +45,12 @@ namespace VibeDesk.Capture
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(quality, 10, 100));
         }
 
+        public void ResetForceFrame()
+        {
+            _lastFrameHash = 0;
+            _consecutiveIdenticalFrames = 0;
+        }
+
         public unsafe byte[]? CaptureAndEncode(bool forceFrame = false)
         {
             Bitmap? bmp = _capturer.Capture();

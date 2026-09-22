@@ -66,9 +66,12 @@ namespace VibeDesk.UI
                     }
                 }, DispatcherPriority.Render);
             }
-            catch
+            catch (Exception ex)
             {
-                // Incomplete or corrupted frame chunk, gracefully ignore
+                Dispatcher.InvokeAsync(() =>
+                {
+                    TxtConnectingStatus.Text = $"Ошибка распаковки кадра: {ex.Message}";
+                });
             }
         }
 

@@ -12,7 +12,6 @@ namespace VibeDesk.Capture
         public int ScreenHeight { get; private set; }
 
         private Bitmap? _reusableBitmap;
-        private Graphics? _graphics;
 
         public bool Initialize()
         {
@@ -25,34 +24,59 @@ namespace VibeDesk.Capture
                 ScreenHeight = 1080;
             }
 
+            _reusableBitmap?.Dispose();
             _reusableBitmap = new Bitmap(ScreenWidth, ScreenHeight, PixelFormat.Format32bppRgb);
-            _graphics = Graphics.FromImage(_reusableBitmap);
             return true;
         }
 
         public Bitmap? Capture()
         {
-            if (_graphics == null || _reusableBitmap == null)
+            if (_reusableBitmap == null)
             {
                 if (!Initialize()) return null;
             }
 
             try
             {
-                // Capture primary screen including layered windows / mouse
-                _graphics!.CopyFromScreen(0, 0, 0, 0, new Size(ScreenWidth, ScreenHeight), CopyPixelOperation.SourceCopy);
+                using (var g = Graphics.FromImage(_reusableBitmap!))
+                {
+                    g.CopyFromScreen(0, 0, 0, 0, new Size(ScreenWidth, ScreenHeight), CopyPixelOperation.SourceCopy);
+                }
                 return _reusableBitmap;
             }
             catch
             {
-                return null;
+                // Fallback: Direct GDI DC copy
+                try
+                {
+                    IntPtr hdcSrc = Win32.GetDC(IntPtr.Zero);
+                    IntPtr hdcDest = Win32.CreateCompatibleDC(hdcSrc);
+                    IntPtr hBmp = Win32.CreateCompatibleBitmap(hdcSrc, ScreenWidth, ScreenHeight);
+                    IntPtr hOld = Win32.SelectObject(hdcDest, hBmp);
+
+                    Win32.BitBlt(hdcDest, 0, 0, ScreenWidth, ScreenHeight, hdcSrc, 0, 0, Win32.SRCCOPY);
+
+                    using (var captured = Image.FromHbitmap(hBmp))
+                    using (var g = Graphics.FromImage(_reusableBitmap!))
+                    {
+                        g.DrawImage(captured, 0, 0, ScreenWidth, ScreenHeight);
+                    }
+
+                    Win32.SelectObject(hdcDest, hOld);
+                    Win32.DeleteObject(hBmp);
+                    Win32.DeleteDC(hdcDest);
+                    Win32.ReleaseDC(IntPtr.Zero, hdcSrc);
+                    return _reusableBitmap;
+                }
+                catch
+                {
+                    return null;
+                }
             }
         }
 
         public void Dispose()
         {
-            _graphics?.Dispose();
-            _graphics = null;
             _reusableBitmap?.Dispose();
             _reusableBitmap = null;
         }
