@@ -51,7 +51,8 @@ namespace VibeDesk.Network
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
                 DisconnectTimeout = 5000,
-                UnconnectedMessagesEnabled = true
+                UnconnectedMessagesEnabled = true,
+                UpdateTime = 5
             };
 
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
