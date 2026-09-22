@@ -119,7 +119,10 @@ namespace VibeDesk.Network
 
         public void PunchNat(IPEndPoint target)
         {
-            if (!_netClient.IsRunning) return;
+            if (!_netClient.IsRunning)
+            {
+                if (!_netClient.Start()) return;
+            }
 
             Task.Run(async () =>
             {

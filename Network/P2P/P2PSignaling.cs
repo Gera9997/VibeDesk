@@ -20,44 +20,90 @@ namespace VibeDesk.Network.P2P
 
     public class P2PSignaling : IDisposable
     {
-        private const string BrokerHost = "broker.emqx.io";
-        private const int BrokerPort = 1883;
+        private static readonly (string Host, int Port)[] Brokers = new[]
+        {
+            ("broker.emqx.io", 1883),
+            ("broker.hivemq.com", 1883)
+        };
 
         private IMqttClient? _mqttClient;
         private readonly MqttClientFactory _factory = new();
+        private bool _isDisposed = false;
+
+        private string? _registeredHostId;
+        private Func<PeerEndpointInfo, Task<PeerEndpointInfo>>? _registeredHostCallback;
+        private string? _activeBrokerHost;
 
         public event Action<string>? OnLog;
+        public bool IsConnected => _mqttClient != null && _mqttClient.IsConnected;
 
         public async Task<bool> ConnectBrokerAsync()
         {
+            if (_mqttClient != null && _mqttClient.IsConnected)
+            {
+                return true;
+            }
+
+            foreach (var (host, port) in Brokers)
+            {
+                try
+                {
+                    _mqttClient?.Dispose();
+                    _mqttClient = _factory.CreateMqttClient();
+
+                    var options = new MqttClientOptionsBuilder()
+                        .WithTcpServer(host, port)
+                        .WithClientId($"VibeDesk_{Guid.NewGuid():N}")
+                        .WithKeepAlivePeriod(TimeSpan.FromSeconds(15))
+                        .WithCleanSession(true)
+                        .WithTimeout(TimeSpan.FromSeconds(4))
+                        .Build();
+
+                    _mqttClient.DisconnectedAsync += async e =>
+                    {
+                        if (_isDisposed) return;
+                        OnLog?.Invoke($"[Signaling] Соединение с брокером {host} разорвано ({e.Reason}). Переподключение...");
+                        await Task.Delay(2000);
+                        if (!_isDisposed && !string.IsNullOrEmpty(_registeredHostId) && _registeredHostCallback != null)
+                        {
+                            await ReRegisterAsync();
+                        }
+                    };
+
+                    var res = await _mqttClient.ConnectAsync(options);
+                    if (res.ResultCode == MqttClientConnectResultCode.Success)
+                    {
+                        _activeBrokerHost = host;
+                        OnLog?.Invoke($"Подключено к брокеру сигналов: {host}:{port}");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OnLog?.Invoke($"Не удалось подключиться к {host}:{port}: {ex.Message}");
+                }
+            }
+
+            return false;
+        }
+
+        private async Task ReRegisterAsync()
+        {
             try
             {
-                if (_mqttClient != null && _mqttClient.IsConnected)
+                if (await ConnectBrokerAsync() && !string.IsNullOrEmpty(_registeredHostId) && _registeredHostCallback != null)
                 {
-                    return true;
+                    await RegisterHostAsync(_registeredHostId, _registeredHostCallback);
                 }
-
-                _mqttClient?.Dispose();
-                _mqttClient = _factory.CreateMqttClient();
-
-                var options = new MqttClientOptionsBuilder()
-                    .WithTcpServer(BrokerHost, BrokerPort)
-                    .WithClientId($"VibeDesk_{Guid.NewGuid():N}")
-                    .WithTimeout(TimeSpan.FromSeconds(5))
-                    .Build();
-
-                var res = await _mqttClient.ConnectAsync(options);
-                return res.ResultCode == MqttClientConnectResultCode.Success;
             }
-            catch (Exception ex)
-            {
-                OnLog?.Invoke($"Ошибка подключения к брокеру: {ex.Message}");
-                return false;
-            }
+            catch { }
         }
 
         public async Task RegisterHostAsync(string hostId, Func<PeerEndpointInfo, Task<PeerEndpointInfo>> onClientRequest)
         {
+            _registeredHostId = hostId;
+            _registeredHostCallback = onClientRequest;
+
             if (!await ConnectBrokerAsync()) return;
 
             string topicReq = $"vibedesk/session/{hostId}/req";
@@ -92,10 +138,10 @@ namespace VibeDesk.Network.P2P
             };
 
             await _mqttClient.SubscribeAsync(topicReq);
-            OnLog?.Invoke($"Vibe ID зарегистрирован в глобальной сети: {hostId}");
+            OnLog?.Invoke($"Vibe ID зарегистрирован в глобальной сети ({_activeBrokerHost}): {hostId}");
         }
 
-        public async Task<PeerEndpointInfo?> RequestHostEndpointsAsync(string hostId, PeerEndpointInfo myClientInfo, int timeoutMs = 8000)
+        public async Task<PeerEndpointInfo?> RequestHostEndpointsAsync(string hostId, PeerEndpointInfo myClientInfo, int timeoutMs = 7000)
         {
             if (!await ConnectBrokerAsync()) return null;
 
@@ -152,7 +198,12 @@ namespace VibeDesk.Network.P2P
 
         public void Dispose()
         {
-            _mqttClient?.Dispose();
+            _isDisposed = true;
+            try
+            {
+                _mqttClient?.Dispose();
+            }
+            catch { }
         }
     }
 }

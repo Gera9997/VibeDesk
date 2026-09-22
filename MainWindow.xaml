@@ -116,11 +116,12 @@
                         <TextBlock Text="PRO / P2P" Foreground="#00E5FF" FontSize="10" FontWeight="Bold"/>
                     </Border>
                     <Border Background="#1C2130" BorderBrush="#2C3550" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="TxtAppVersion" Text="v1.1.0" Foreground="#858B9E" FontSize="10" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="TxtAppVersion" Text="v1.2.0" Foreground="#858B9E" FontSize="10" FontWeight="SemiBold"/>
                     </Border>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <Button x:Name="BtnFirewall" Style="{StaticResource SecondaryButton}" Content="🛡️ Брандмауэр" Padding="10,4" Margin="0,0,8,0" Click="BtnFirewall_Click" ToolTip="Разрешить входящие подключения в Брандмауэре Windows (1 клик)"/>
                     <Button x:Name="BtnCheckUpdate" Style="{StaticResource SecondaryButton}" Content="🔄 Обновления" Padding="10,4" Margin="0,0,12,0" Click="BtnCheckUpdate_Click" ToolTip="Проверить наличие обновлений на GitHub"/>
                     <TextBlock Text="Без ограничений и подписок" Foreground="#7A8098" FontSize="12" VerticalAlignment="Center"/>
                 </StackPanel>
@@ -203,6 +204,11 @@
                         <DockPanel Margin="0,6">
                             <TextBlock Text="Глобальный STUN:" Foreground="#71778B" FontSize="12"/>
                             <TextBlock x:Name="TxtPublicEndpoint" Text="Определение..." Foreground="#A0A5B8" FontSize="12" HorizontalAlignment="Right"/>
+                        </DockPanel>
+
+                        <DockPanel Margin="0,6">
+                            <TextBlock Text="Брандмауэр Windows:" Foreground="#71778B" FontSize="12" VerticalAlignment="Center"/>
+                            <Button x:Name="BtnFixFirewall" Style="{StaticResource SecondaryButton}" Content="🛡️ Разрешить (1 клик)" Padding="8,2" FontSize="11" HorizontalAlignment="Right" Click="BtnFirewall_Click" ToolTip="Разрешить входящие подключения в Брандмауэре Windows"/>
                         </DockPanel>
                     </StackPanel>
 

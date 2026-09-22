@@ -40,6 +40,7 @@ namespace VibeDesk.Network
         public int ScreenHeight => _captureManager?.ScreenHeight ?? 1080;
         public string ActiveCaptureEngine => _captureManager?.ActiveEngineName ?? "None";
         public bool HasClient => _connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected;
+        public string DeviceId { get; set; } = string.Empty;
 
         public int CurrentFps { get; private set; }
         public double OutgoingKbps { get; private set; }
@@ -62,25 +63,56 @@ namespace VibeDesk.Network
 
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
             {
+                try
+                {
+                    byte[] data = reader.GetRemainingBytes();
+                    string msg = Encoding.UTF8.GetString(data);
+
+                    if (msg.StartsWith("VIBE_DISC:"))
+                    {
+                        var parts = msg.Split(':');
+                        if (parts.Length >= 2 && !string.IsNullOrEmpty(DeviceId) && parts[1] == DeviceId)
+                        {
+                            byte[] resp = Encoding.UTF8.GetBytes($"VIBE_RESP:{DeviceId}:{Port}");
+                            _netServer.SendUnconnectedMessage(resp, point);
+                            OnStatusChanged?.Invoke($"[LAN Discovery] Ответили на поиск пиру: {point.Address}:{point.Port}");
+                            return;
+                        }
+                    }
+                }
+                catch { }
+
                 OnPunchReceived?.Invoke(point);
             };
 
             _listener.ConnectionRequestEvent += request =>
             {
-                if (_connectedPeer == null || _connectedPeer.ConnectionState != ConnectionState.Connected)
+                OnStatusChanged?.Invoke($"[Хост] Входящий запрос на сеанс от {request.RemoteEndPoint}...");
+
+                if (_connectedPeer == null ||
+                    _connectedPeer.ConnectionState != ConnectionState.Connected ||
+                    _connectedPeer.Address.Equals(request.RemoteEndPoint.Address))
                 {
+                    if (_connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected)
+                    {
+                        OnStatusChanged?.Invoke($"[Хост] Сброс предыдущего зависшего сеанса для {request.RemoteEndPoint.Address}");
+                        _connectedPeer.Disconnect();
+                    }
+
                     request.AcceptIfKey(ConnectionKey);
+                    OnStatusChanged?.Invoke($"[Хост] ✅ Запрос одобрен для {request.RemoteEndPoint}");
                 }
                 else
                 {
                     request.Reject();
+                    OnStatusChanged?.Invoke($"[Хост] ⚠️ Запрос отклонен: хост уже занят другим клиентом ({_connectedPeer.Address})");
                 }
             };
 
             _listener.PeerConnectedEvent += peer =>
             {
                 _connectedPeer = peer;
-                OnStatusChanged?.Invoke($"Клиент подключен: {peer.Address}:{peer.Port}");
+                OnStatusChanged?.Invoke($"⚡ Клиент подключен: {peer.Address}:{peer.Port}");
                 OnClientConnected?.Invoke(peer);
 
                 // Send screen geometry
