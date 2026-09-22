@@ -62,72 +62,82 @@ namespace VibeDesk.Update
         public async Task<UpdateInfo> CheckForUpdateAsync(CancellationToken cancellationToken = default)
         {
             string url = $"https://api.github.com/repos/{_owner}/{_repo}/releases/latest";
+            Exception? lastEx = null;
 
-            try
+            for (int attempt = 1; attempt <= 3; attempt++)
             {
-                using var response = await _httpClient.GetAsync(url, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    using var response = await _httpClient.GetAsync(url, cancellationToken);
+
+                    if (!response.IsSuccessStatusCode)
                     {
+                        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                        {
+                            return new UpdateInfo
+                            {
+                                HasUpdate = false,
+                                ErrorMessage = "Релизы на GitHub пока не найдены."
+                            };
+                        }
+
                         return new UpdateInfo
                         {
                             HasUpdate = false,
-                            ErrorMessage = "Релизы на GitHub пока не найдены. Создайте первый Release с тегом v1.1.0."
+                            ErrorMessage = $"GitHub API ответил с ошибкой: {(int)response.StatusCode} {response.ReasonPhrase}"
                         };
                     }
 
-                    return new UpdateInfo
+                    string json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    string tagName = root.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() ?? "" : "";
+                    string body = root.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() ?? "" : "";
+
+                    string downloadUrl = "";
+                    long sizeBytes = 0;
+
+                    if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
                     {
-                        HasUpdate = false,
-                        ErrorMessage = $"GitHub API ответил с ошибкой: {(int)response.StatusCode} {response.ReasonPhrase}"
-                    };
-                }
-
-                string json = await response.Content.ReadAsStringAsync(cancellationToken);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                string tagName = root.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() ?? "" : "";
-                string body = root.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() ?? "" : "";
-
-                string downloadUrl = "";
-                long sizeBytes = 0;
-
-                if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var asset in assets.EnumerateArray())
-                    {
-                        string name = asset.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
-                        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        foreach (var asset in assets.EnumerateArray())
                         {
-                            downloadUrl = asset.TryGetProperty("browser_download_url", out var urlProp) ? urlProp.GetString() ?? "" : "";
-                            sizeBytes = asset.TryGetProperty("size", out var sizeProp) ? sizeProp.GetInt64() : 0;
-                            break;
+                            string name = asset.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = asset.TryGetProperty("browser_download_url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+                                sizeBytes = asset.TryGetProperty("size", out var sizeProp) ? sizeProp.GetInt64() : 0;
+                                break;
+                            }
                         }
                     }
+
+                    bool hasUpdate = AppVersion.IsNewer(tagName);
+
+                    return new UpdateInfo
+                    {
+                        HasUpdate = hasUpdate,
+                        LatestVersion = tagName,
+                        DownloadUrl = downloadUrl,
+                        FileSizeBytes = sizeBytes,
+                        ReleaseNotes = body
+                    };
                 }
-
-                bool hasUpdate = AppVersion.IsNewer(tagName);
-
-                return new UpdateInfo
+                catch (Exception ex)
                 {
-                    HasUpdate = hasUpdate,
-                    LatestVersion = tagName,
-                    DownloadUrl = downloadUrl,
-                    FileSizeBytes = sizeBytes,
-                    ReleaseNotes = body
-                };
+                    lastEx = ex;
+                    if (attempt < 3)
+                    {
+                        await Task.Delay(1000, cancellationToken);
+                    }
+                }
             }
-            catch (Exception ex)
+
+            return new UpdateInfo
             {
-                return new UpdateInfo
-                {
-                    HasUpdate = false,
-                    ErrorMessage = $"Ошибка проверки обновлений: {ex.Message}"
-                };
-            }
+                HasUpdate = false,
+                ErrorMessage = $"Ошибка проверки обновлений: {lastEx?.Message}"
+            };
         }
 
         public async Task<bool> DownloadAndApplyUpdateAsync(

@@ -36,7 +36,6 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
           -o ./publish
 
       - name: Create GitHub Release and Upload Binary

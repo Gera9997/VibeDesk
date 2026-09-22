@@ -382,23 +382,28 @@ namespace VibeDesk
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
 
                     bool connected = false;
+                    string lastTriedEp = "";
 
                     // 0. Priority: If we already received an incoming UDP punch packet directly from the host!
                     if (_lastPunchReceivedFrom != null)
                     {
-                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {_lastPunchReceivedFrom}! Мгновенное подключение...");
-                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 2500);
+                        lastTriedEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
+                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {lastTriedEp}! Подключение...");
+                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 6000);
                         if (connected)
                         {
-                            AppendLog($"⚡ Успешно подключено по прямому каналу {_lastPunchReceivedFrom}!");
+                            AppendLog($"⚡ Успешно подключено по прямому каналу {lastTriedEp}!");
                         }
                     }
 
-                    // 1. First: Test Direct LAN connection (optimal for the couch)
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1")
+                    // 1. First: Test Direct LAN connection if different from punch
+                    string hostLanEp = $"{hostInfo.LocalIp}:{hostInfo.LocalPort}";
+                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && hostLanEp != lastTriedEp)
                     {
-                        AppendLog($"🛋️ Проверка прямого LAN-подключения (диван) к {hostInfo.LocalIp}:{hostInfo.LocalPort}...");
-                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 2000);
+                        client.Disconnect();
+                        lastTriedEp = hostLanEp;
+                        AppendLog($"🛋️ Проверка прямого LAN-подключения (диван) к {hostLanEp}...");
+                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 6000);
                         if (connected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по домашней локальной сети (LAN)!");
@@ -406,19 +411,22 @@ namespace VibeDesk
                     }
 
                     // 2. Second: If LAN not available, test Internet P2P via STUN port
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0)
+                    string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
+                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0 && hostPublicEp != lastTriedEp)
                     {
                         client.Disconnect();
-                        AppendLog($"🌐 Проверка P2P через Интернет к {hostInfo.PublicIp}:{hostInfo.PublicPort}...");
-                        connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 3000);
+                        lastTriedEp = hostPublicEp;
+                        AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
+                        connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
                     }
 
                     // 3. Third: Try Internet P2P via default port 15890 (if router did 1:1 mapping)
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort != VibeHost.DefaultPort)
+                    string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
+                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
                     {
                         client.Disconnect();
-                        AppendLog($"🌐 Проверка прямого порта к {hostInfo.PublicIp}:{VibeHost.DefaultPort}...");
-                        connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 2500);
+                        AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
+                        connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
                     }
 
                     if (connected)

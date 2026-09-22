@@ -116,7 +116,7 @@
                         <TextBlock Text="PRO / P2P" Foreground="#00E5FF" FontSize="10" FontWeight="Bold"/>
                     </Border>
                     <Border Background="#1C2130" BorderBrush="#2C3550" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="TxtAppVersion" Text="v1.2.0" Foreground="#858B9E" FontSize="10" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="TxtAppVersion" Text="v1.2.1" Foreground="#858B9E" FontSize="10" FontWeight="SemiBold"/>
                     </Border>
                 </StackPanel>
 
