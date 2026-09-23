@@ -1,5 +1,8 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Text.Json;
+using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using VibeDesk.Update;
 
@@ -95,6 +98,54 @@ namespace VibeDesk.Tests
             Assert.AreEqual("https://github.com/Gera9997/VibeDesk/releases/download/v1.2.0/VibeDesk.exe", downloadUrl);
             Assert.AreEqual(65000000L, sizeBytes);
             Assert.IsTrue(body.Contains("120 FPS"));
+        }
+
+        [TestMethod]
+        public void TestFileMoveRunningExecutable()
+        {
+            // Test moving the current running process or a spawned test process
+            string testDir = Path.Combine(Path.GetTempPath(), "VibeDesk_TestUpdate_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                string originalExe = Path.Combine(testDir, "TestApp.exe");
+                string backupExe = Path.Combine(testDir, "TestApp.exe.bak");
+                string newExe = Path.Combine(testDir, "TestApp_update.exe");
+
+                // Copy real VibeDesk.exe or cmd.exe to originalExe and launch it!
+                File.Copy(Environment.ProcessPath ?? "cmd.exe", originalExe, overwrite: true);
+                File.WriteAllBytes(backupExe, new byte[512]);
+                File.WriteAllBytes(newExe, new byte[2048]);
+
+                var proc = Process.Start(new ProcessStartInfo
+                {
+                    FileName = originalExe,
+                    Arguments = "--test-silent",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+
+                try
+                {
+                    Thread.Sleep(500);
+                    // DO NOT delete backupExe first - test if File.Move(..., overwrite: true) works directly!
+                    File.Move(originalExe, backupExe, overwrite: true);
+                    File.Move(newExe, originalExe, overwrite: true);
+
+                    Assert.IsTrue(File.Exists(originalExe));
+                    Assert.AreEqual(2048, new FileInfo(originalExe).Length);
+                    Assert.IsTrue(File.Exists(backupExe));
+                }
+                finally
+                {
+                    try { proc?.Kill(); proc?.WaitForExit(1000); } catch { }
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
         }
     }
 }

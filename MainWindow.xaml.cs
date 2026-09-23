@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -758,7 +759,29 @@ namespace VibeDesk
                 PbUpdateProgress.Visibility = Visibility.Collapsed;
                 TxtUpdateStatus.Text = $"Ошибка загрузки: {ex.Message}";
                 AppendLog($"❌ Ошибка загрузки обновления: {ex.Message}");
-                MessageBox.Show(this, $"Ошибка загрузки обновления: {ex.Message}", "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, $"Ошибка загрузки обновления: {ex.Message}\n\nВы также можете скачать файл вручную, нажав кнопку «🌐 Скачать с сайта».", "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnManualDownload_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string targetUrl = _latestUpdateInfo?.DownloadUrl;
+                if (string.IsNullOrEmpty(targetUrl))
+                {
+                    targetUrl = "https://github.com/Gera9997/VibeDesk/releases/latest";
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = targetUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Не удалось открыть браузер: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
