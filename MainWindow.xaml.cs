@@ -54,7 +54,7 @@ namespace VibeDesk
             Closed += MainWindow_Closed;
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             AppendLog("=== Инициализация VibeDesk ===");
             FindRealLocalIp();
@@ -67,11 +67,11 @@ namespace VibeDesk
                 FirewallHelper.AddFirewallRules(elevateIfNeed: false);
             }
 
-            // 1. Start local host FIRST so it is listening immediately!
-            StartLocalHost();
+            // 1. Resolve STUN before starting host to discover public endpoint
+            await ResolveStunAsync();
 
-            // 2. Resolve STUN in background (non-blocking)
-            _ = ResolveStunAsync();
+            // 2. Start local host
+            StartLocalHost();
 
             // 3. Register with global P2P signaling in background
             _ = InitializeSignalingAsync();
