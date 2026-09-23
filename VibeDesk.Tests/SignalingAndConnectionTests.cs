@@ -70,5 +70,81 @@ namespace VibeDesk.Tests
             Assert.IsTrue(tcs.Task.Result, "Client should be connected");
             Assert.IsTrue(client.IsConnected, "client.IsConnected should be true");
         }
+
+        [TestMethod]
+        public async Task TestFrameTransmissionFromHostToClient()
+        {
+            int testPort = 15897;
+            using var host = new VibeHost(testPort);
+            host.DeviceId = "777999";
+            bool hostStarted = host.Start(targetFps: 30, jpegQuality: 60, scale: 0.5f);
+            Assert.IsTrue(hostStarted, "Host should start on port " + testPort);
+
+            using var client = new VibeClient();
+            var frameTcs = new TaskCompletionSource<byte[]>();
+            client.OnFrameReceived += frame =>
+            {
+                frameTcs.TrySetResult(frame);
+            };
+
+            bool initiated = client.Connect("127.0.0.1", testPort);
+            Assert.IsTrue(initiated, "Client connect call should initiate");
+
+            var timeoutTask = Task.Delay(8000);
+            var completed = await Task.WhenAny(frameTcs.Task, timeoutTask);
+
+            Assert.AreEqual(frameTcs.Task, completed, "Frame should be received within 8 seconds");
+            var frameData = frameTcs.Task.Result;
+            Assert.IsNotNull(frameData);
+            Assert.IsTrue(frameData.Length > 0, "Frame data should not be empty");
+        }
+
+        [TestMethod]
+        public async Task TestContinuousStreamingStability()
+        {
+            int testPort = 15896;
+            using var host = new VibeHost(testPort);
+            host.DeviceId = "777666";
+            host.OnStatusChanged += status =>
+            {
+                Console.WriteLine($"[HOST STATUS] {status}");
+            };
+            bool hostStarted = host.Start(targetFps: 60, jpegQuality: 70, scale: 1.0f);
+            Assert.IsTrue(hostStarted, "Host should start on port " + testPort);
+
+            using var client = new VibeClient();
+            int framesReceived = 0;
+            bool disconnected = false;
+            string disconnectReason = "";
+
+            client.OnFrameReceived += frame =>
+            {
+                framesReceived++;
+            };
+
+            client.OnDisconnected += () =>
+            {
+                disconnected = true;
+            };
+
+            client.OnStatusChanged += status =>
+            {
+                if (status.Contains("Отключено")) disconnectReason = status;
+            };
+
+            bool initiated = client.Connect("127.0.0.1", testPort);
+            Assert.IsTrue(initiated, "Client connect call should initiate");
+
+            // Wait 8 seconds of streaming
+            for (int i = 0; i < 8; i++)
+            {
+                await Task.Delay(1000);
+                Console.WriteLine($"Sec {i + 1}: Frames={framesReceived}, IncomingKbps={client.IncomingKbps:F0}, Ping={client.PingMs}ms, Disconnected={disconnected}");
+            }
+
+            Console.WriteLine($"Frames received in 8s: {framesReceived}, disconnected: {disconnected} ({disconnectReason})");
+            Assert.IsFalse(disconnected, $"Client should not disconnect during streaming: {disconnectReason}");
+            Assert.IsTrue(framesReceived > 20, $"Expected >20 frames, got {framesReceived}");
+        }
     }
 }

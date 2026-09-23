@@ -136,7 +136,7 @@ namespace VibeDesk.Capture
 
         private static ImageCodecInfo GetEncoder(ImageFormat format)
         {
-            var codecs = ImageCodecInfo.GetImageDecoders();
+            var codecs = ImageCodecInfo.GetImageEncoders();
             foreach (var codec in codecs)
             {
                 if (codec.FormatID == format.Guid)

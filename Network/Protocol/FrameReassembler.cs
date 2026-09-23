@@ -27,7 +27,7 @@ namespace VibeDesk.Network.Protocol
             }
         }
 
-        private const int MaxActiveSlots = 8;
+        private const int MaxActiveSlots = 16;
         private readonly FrameSlot[] _slots = new FrameSlot[MaxActiveSlots];
         private uint _lastCompletedFrameId = 0;
 

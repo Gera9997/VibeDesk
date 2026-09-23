@@ -56,7 +56,7 @@ namespace VibeDesk.Network
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
-                DisconnectTimeout = 5000,
+                DisconnectTimeout = 10000,
                 UnconnectedMessagesEnabled = true,
                 UpdateTime = 5
             };
@@ -222,7 +222,8 @@ namespace VibeDesk.Network
                         fpsStopwatch.Restart();
                     }
 
-                    if (_connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected && _captureManager != null)
+                    var peer = _connectedPeer;
+                    if (peer != null && peer.ConnectionState == ConnectionState.Connected && _captureManager != null)
                     {
                         byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
                         if (frameData != null && frameData.Length > 0)
@@ -234,11 +235,12 @@ namespace VibeDesk.Network
 
                             for (ushort i = 0; i < totalChunks; i++)
                             {
+                                if (peer.ConnectionState != ConnectionState.Connected) break;
                                 int offset = i * chunkSize;
                                 int length = Math.Min(chunkSize, totalLength - offset);
                                 byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
 
-                                _connectedPeer.Send(chunkPacket, DeliveryMethod.ReliableOrdered);
+                                peer.Send(chunkPacket, DeliveryMethod.Unreliable);
                                 bytesSentThisSecond += chunkPacket.Length;
                             }
 

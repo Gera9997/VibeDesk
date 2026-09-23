@@ -18,7 +18,7 @@ namespace VibeDesk.Network.Protocol
 
     public static class PacketBuilder
     {
-        public const int MaxChunkPayloadSize = 1200; // Optimal for UDP MTU to prevent IP fragmentation
+        public const int MaxChunkPayloadSize = 1000; // Optimal for UDP MTU to prevent IP fragmentation and fit LiteNetLib limit (1023 bytes)
 
         public static byte[] CreateFrameChunk(uint frameId, ushort chunkIndex, ushort totalChunks, byte[] chunkData, int offset, int length)
         {

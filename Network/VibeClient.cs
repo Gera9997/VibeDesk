@@ -53,7 +53,7 @@ namespace VibeDesk.Network
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
-                DisconnectTimeout = 5000,
+                DisconnectTimeout = 10000,
                 UnconnectedMessagesEnabled = true,
                 UpdateTime = 5
             };
