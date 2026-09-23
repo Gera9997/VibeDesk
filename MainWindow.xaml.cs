@@ -355,9 +355,11 @@ namespace VibeDesk
                         if (lanConnected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по локальной сети к {lanEp}!");
-                            var sessionWindow = new RemoteSessionWindow(client);
-                            sessionWindow.Owner = this;
-                            sessionWindow.Show();
+                            Dispatcher.Invoke(() =>
+                            {
+                                var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
+                                sessionWindow.Show();
+                            });
                             return;
                         }
                         else
@@ -456,9 +458,18 @@ namespace VibeDesk
 
                     if (connected)
                     {
-                        var sessionWindow = new RemoteSessionWindow(client);
-                        sessionWindow.Owner = this;
-                        sessionWindow.Show();
+                        Dispatcher.Invoke(() =>
+                        {
+                            try
+                            {
+                                var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
+                                sessionWindow.Show();
+                            }
+                            catch (Exception winEx)
+                            {
+                                AppendLog($"❌ Ошибка создания окна: {winEx.GetType().Name}: {winEx.Message}");
+                            }
+                        });
                     }
                     else
                     {
@@ -498,9 +509,18 @@ namespace VibeDesk
 
                 if (directConnected)
                 {
-                    var sessionWindow = new RemoteSessionWindow(directClient);
-                    sessionWindow.Owner = this;
-                    sessionWindow.Show();
+                    Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            var sessionWindow = new RemoteSessionWindow(directClient) { Owner = this };
+                            sessionWindow.Show();
+                        }
+                        catch (Exception winEx)
+                        {
+                            AppendLog($"❌ Ошибка создания окна: {winEx.GetType().Name}: {winEx.Message}");
+                        }
+                    });
                 }
                 else
                 {
@@ -512,8 +532,8 @@ namespace VibeDesk
             }
             catch (Exception ex)
             {
-                AppendLog($"❌ Ошибка: {ex.Message}");
-                MessageBox.Show(this, $"Ошибка: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppendLog($"❌ Ошибка: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                MessageBox.Show(this, $"Ошибка: {ex.GetType().Name}: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -523,7 +543,7 @@ namespace VibeDesk
 
         private async Task<bool> TryConnectAsync(VibeClient client, string ip, int port, int timeoutMs)
         {
-            var tcs = new TaskCompletionSource<bool>();
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Action onConn = () => tcs.TrySetResult(true);
             Action onDis = () => tcs.TrySetResult(false);
 
@@ -595,6 +615,12 @@ namespace VibeDesk
 
         private void AppendLog(string text)
         {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.InvokeAsync(() => AppendLog(text));
+                return;
+            }
+
             string time = DateTime.Now.ToString("HH:mm:ss");
             TxtClientLog.AppendText($"[{time}] {text}\n");
             ScrollLogs.ScrollToEnd();
