@@ -30,9 +30,11 @@ namespace VibeDesk.Native
                 string batchContent = "@echo off\r\n" +
                     "netsh advfirewall firewall delete rule name=\"VibeDesk UDP 15890\" >nul 2>&1\r\n" +
                     "netsh advfirewall firewall delete rule name=\"VibeDesk TCP 15890\" >nul 2>&1\r\n" +
+                    "netsh advfirewall firewall delete rule name=\"VibeDesk UDP Ports\" >nul 2>&1\r\n" +
+                    "netsh advfirewall firewall delete rule name=\"VibeDesk TCP Ports\" >nul 2>&1\r\n" +
                     "netsh advfirewall firewall delete rule name=\"VibeDesk Application\" >nul 2>&1\r\n" +
-                    "netsh advfirewall firewall add rule name=\"VibeDesk UDP 15890\" dir=in action=allow protocol=UDP localport=15890\r\n" +
-                    "netsh advfirewall firewall add rule name=\"VibeDesk TCP 15890\" dir=in action=allow protocol=TCP localport=15890\r\n";
+                    "netsh advfirewall firewall add rule name=\"VibeDesk UDP Ports\" dir=in action=allow protocol=UDP localport=15890-15891\r\n" +
+                    "netsh advfirewall firewall add rule name=\"VibeDesk TCP Ports\" dir=in action=allow protocol=TCP localport=15890-15891\r\n";
 
                 if (!string.IsNullOrEmpty(exePath))
                 {

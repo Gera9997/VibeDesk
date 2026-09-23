@@ -319,17 +319,28 @@ namespace VibeDesk
                 {
                     AppendLog($"🔎 Поиск хоста {FormatId(target)} в локальной сети (LAN) и через глобальные серверы...");
 
-                    // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network)
-                    var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, timeoutMs: 1500);
+                    // 0. Start dedicated client socket
+                    var client = new VibeClient();
+                    client.Start(VibeClient.DefaultClientPort);
+                    client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
+                    client.OnPunchReceived += ep =>
+                    {
+                        _lastPunchReceivedFrom = ep;
+                    };
 
-                    // 2. Concurrently prepare global signaling
+                    int clientLocalPort = client.LocalPort;
+
+                    // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network, bound to real physical adapter)
+                    var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, _myLocalIp, timeoutMs: 1500);
+
+                    // 2. Concurrently prepare global signaling with real client socket port!
                     var myInfo = new PeerEndpointInfo
                     {
                         DeviceId = _myDeviceId,
                         PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
                         PublicPort = _myPublicEndPoint?.Port ?? 0,
                         LocalIp = _myLocalIp,
-                        LocalPort = _host.Port
+                        LocalPort = clientLocalPort
                     };
 
                     var signalingTask = _signaling.RequestHostEndpointsAsync(target, myInfo, timeoutMs: 7000);
@@ -339,22 +350,21 @@ namespace VibeDesk
                     if (lanEp != null)
                     {
                         AppendLog($"🛋️ Хост {FormatId(target)} обнаружен в домашней сети: {lanEp}! Мгновенное подключение...");
-                        var lanClient = new VibeClient();
-                        lanClient.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
 
-                        bool lanConnected = await TryConnectAsync(lanClient, lanEp.Address.ToString(), lanEp.Port, timeoutMs: 3000);
+                        bool lanConnected = await TryConnectAsync(client, lanEp.Address.ToString(), lanEp.Port, timeoutMs: 4000);
                         if (lanConnected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по локальной сети к {lanEp}!");
-                            var sessionWindow = new RemoteSessionWindow(lanClient);
+                            var sessionWindow = new RemoteSessionWindow(client);
                             sessionWindow.Owner = this;
                             sessionWindow.Show();
                             return;
                         }
                         else
                         {
-                            lanClient.Dispose();
-                            AppendLog($"⚠️ Хост ответил на бродкаст {lanEp}, но LiteNetLib соединение сорвалось. Переход к глобальной сети...");
+                            AppendLog($"⚠️ Хост ответил на бродкаст {lanEp}, но соединение не завершилось. Переход к глобальной сети...");
+                            client.Disconnect();
+                            client.Start(VibeClient.DefaultClientPort);
                         }
                     }
                     else
@@ -367,6 +377,7 @@ namespace VibeDesk
 
                     if (hostInfo == null)
                     {
+                        client.Dispose();
                         AppendLog($"❌ Хост с ID {FormatId(target)} не ответил ни в локальной сети, ни через глобальный сервер.");
                         AppendLog("   Подсказка: убедитесь, что VibeDesk запущен на удаленном ПК и нажмите на нем кнопку '🛡️ Брандмауэр'.");
                         MessageBox.Show(this, $"Устройство с ID {FormatId(target)} не отвечает.\n\nУбедитесь, что VibeDesk запущен на удаленном ПК и разрешен в Брандмауэре Windows.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -377,9 +388,6 @@ namespace VibeDesk
                     AppendLog($"📥 Ответ от хоста {FormatId(target)} получен!");
                     AppendLog($"   -> Локальный IP хоста: {hostInfo.LocalIp}:{hostInfo.LocalPort}");
                     AppendLog($"   -> Внешний IP хоста: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
-
-                    var client = new VibeClient();
-                    client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
 
                     bool connected = false;
                     string lastTriedEp = "";
@@ -401,6 +409,7 @@ namespace VibeDesk
                     if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && hostLanEp != lastTriedEp)
                     {
                         client.Disconnect();
+                        client.Start(VibeClient.DefaultClientPort);
                         lastTriedEp = hostLanEp;
                         AppendLog($"🛋️ Проверка прямого LAN-подключения (диван) к {hostLanEp}...");
                         connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 6000);
@@ -415,6 +424,7 @@ namespace VibeDesk
                     if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0 && hostPublicEp != lastTriedEp)
                     {
                         client.Disconnect();
+                        client.Start(VibeClient.DefaultClientPort);
                         lastTriedEp = hostPublicEp;
                         AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
                         connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
@@ -425,6 +435,7 @@ namespace VibeDesk
                     if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
                     {
                         client.Disconnect();
+                        client.Start(VibeClient.DefaultClientPort);
                         AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
                         connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
                     }
@@ -460,10 +471,16 @@ namespace VibeDesk
                     AppendLog($"🎯 Прямой режим IP (порт по умолчанию): {connectIp}:{connectPort}");
                 }
 
+                if (!IsSameSubnet(_myLocalIp, connectIp) && !connectIp.StartsWith("127."))
+                {
+                    AppendLog($"⚠️ Внимание: введённый IP ({connectIp}) находится в другой подсети относительно вашего LAN ({_myLocalIp}). Проверьте правильность адреса!");
+                }
+
                 // Direct IP mode
                 var directClient = new VibeClient();
+                directClient.Start(VibeClient.DefaultClientPort);
                 directClient.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
-                bool directConnected = await TryConnectAsync(directClient, connectIp, connectPort, timeoutMs: 4000);
+                bool directConnected = await TryConnectAsync(directClient, connectIp, connectPort, timeoutMs: 6000);
 
                 if (directConnected)
                 {

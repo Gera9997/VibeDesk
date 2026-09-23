@@ -32,7 +32,9 @@ namespace VibeDesk.Network
         public event Action<byte[]>? OnFrameReceived;
         public event Action<int, int>? OnScreenInfoReceived;
         public event Action<string>? OnClipboardReceived;
+        public event Action<IPEndPoint>? OnPunchReceived;
 
+        public const int DefaultClientPort = 15891;
         public bool IsConnected => _serverPeer != null && _serverPeer.ConnectionState == ConnectionState.Connected;
         public int PingMs { get; private set; }
         public int CurrentFps { get; private set; }
@@ -41,6 +43,7 @@ namespace VibeDesk.Network
         public int RemoteHeight { get; private set; } = 1080;
 
         public NetManager RawNetManager => _netClient;
+        public int LocalPort => _netClient.LocalPort;
 
         public VibeClient()
         {
@@ -58,6 +61,7 @@ namespace VibeDesk.Network
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
             {
                 OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
+                OnPunchReceived?.Invoke(point);
             };
 
             _reassembler = new FrameReassembler();
@@ -88,16 +92,31 @@ namespace VibeDesk.Network
             };
         }
 
-        public bool Connect(string host, int port)
+        public bool Start(int preferredPort = DefaultClientPort)
         {
-            if (!_netClient.IsRunning)
+            if (_netClient.IsRunning) return true;
+
+            // 1. Try dedicated client port (e.g. 15891) for symmetric firewall punch
+            if (preferredPort > 0 && _netClient.Start(preferredPort))
             {
-                if (!_netClient.Start())
-                {
-                    OnStatusChanged?.Invoke("Не удалось запустить клиентский сетевой модуль.");
-                    return false;
-                }
+                StartPollThread();
+                return true;
             }
+
+            // 2. Fallback to any OS ephemeral port
+            if (_netClient.Start())
+            {
+                StartPollThread();
+                return true;
+            }
+
+            OnStatusChanged?.Invoke("Не удалось запустить клиентский сетевой модуль.");
+            return false;
+        }
+
+        private void StartPollThread()
+        {
+            if (_pollThread != null && _pollThread.IsAlive) return;
 
             _isRunning = true;
             _pollThread = new Thread(ClientPollLoop)
@@ -106,6 +125,19 @@ namespace VibeDesk.Network
                 Name = "VibeDesk_ClientPollThread"
             };
             _pollThread.Start();
+        }
+
+        public bool Connect(string host, int port)
+        {
+            if (!_netClient.IsRunning)
+            {
+                if (!Start())
+                {
+                    return false;
+                }
+            }
+
+            StartPollThread();
 
             OnStatusChanged?.Invoke($"Подключение к {host}:{port}...");
             _serverPeer = _netClient.Connect(host, port, VibeHost.ConnectionKey);
@@ -121,7 +153,7 @@ namespace VibeDesk.Network
         {
             if (!_netClient.IsRunning)
             {
-                if (!_netClient.Start()) return;
+                if (!Start()) return;
             }
 
             Task.Run(async () =>
