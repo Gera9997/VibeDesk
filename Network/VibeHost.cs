@@ -76,13 +76,16 @@ namespace VibeDesk.Network
                             byte[] resp = Encoding.UTF8.GetBytes($"VIBE_RESP:{DeviceId}:{Port}");
                             _netServer.SendUnconnectedMessage(resp, point);
                             OnStatusChanged?.Invoke($"[LAN Discovery] Ответили на поиск пиру: {point.Address}:{point.Port}");
-                            return;
                         }
+                    }
+
+                    if (msg.StartsWith("VIBE_PUNCH") && point.Port != 19302 && point.Port != 3478)
+                    {
+                        OnPunchReceived?.Invoke(point);
+                        return;
                     }
                 }
                 catch { }
-
-                OnPunchReceived?.Invoke(point);
             };
 
             _listener.ConnectionRequestEvent += request =>

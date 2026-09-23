@@ -392,34 +392,48 @@ namespace VibeDesk
                     bool connected = false;
                     string lastTriedEp = "";
 
-                    // 0. Priority: If we already received an incoming UDP punch packet directly from the host!
-                    if (_lastPunchReceivedFrom != null)
-                    {
-                        lastTriedEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
-                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {lastTriedEp}! Подключение...");
-                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 6000);
-                        if (connected)
-                        {
-                            AppendLog($"⚡ Успешно подключено по прямому каналу {lastTriedEp}!");
-                        }
-                    }
-
-                    // 1. First: Test Direct LAN connection if different from punch
+                    // 1. Priority A: If on the SAME local network (couch mode), connect directly via LAN instantly!
                     string hostLanEp = $"{hostInfo.LocalIp}:{hostInfo.LocalPort}";
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && hostLanEp != lastTriedEp)
+                    if (!string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && IsSameSubnet(_myLocalIp, hostInfo.LocalIp))
                     {
-                        client.Disconnect();
-                        client.Start(VibeClient.DefaultClientPort);
                         lastTriedEp = hostLanEp;
-                        AppendLog($"🛋️ Проверка прямого LAN-подключения (диван) к {hostLanEp}...");
-                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 6000);
+                        AppendLog($"🛋️ Обнаружена общая домашняя сеть! Мгновенное подключение к {hostLanEp}...");
+                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 5000);
                         if (connected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по домашней локальной сети (LAN)!");
                         }
                     }
 
-                    // 2. Second: If LAN not available, test Internet P2P via STUN port
+                    // 2. Priority B: If we received an incoming UDP punch packet directly from the host
+                    if (!connected && _lastPunchReceivedFrom != null && !IPAddress.IsLoopback(_lastPunchReceivedFrom.Address))
+                    {
+                        lastTriedEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
+                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {lastTriedEp}! Подключение...");
+                        client.Disconnect();
+                        client.Start(VibeClient.DefaultClientPort);
+                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 5000);
+                        if (connected)
+                        {
+                            AppendLog($"⚡ Успешно подключено по прямому каналу {lastTriedEp}!");
+                        }
+                    }
+
+                    // 3. Priority C: Test Direct LAN connection if not tried yet
+                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && hostLanEp != lastTriedEp)
+                    {
+                        client.Disconnect();
+                        client.Start(VibeClient.DefaultClientPort);
+                        lastTriedEp = hostLanEp;
+                        AppendLog($"🛋️ Проверка прямого LAN-подключения к {hostLanEp}...");
+                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 5000);
+                        if (connected)
+                        {
+                            AppendLog($"⚡ Успешно подключено напрямую по локальной сети!");
+                        }
+                    }
+
+                    // 4. Priority D: If LAN not available, test Internet P2P via STUN port
                     string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
                     if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0 && hostPublicEp != lastTriedEp)
                     {
@@ -430,7 +444,7 @@ namespace VibeDesk
                         connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
                     }
 
-                    // 3. Third: Try Internet P2P via default port 15890 (if router did 1:1 mapping)
+                    // 5. Priority E: Try Internet P2P via default port 15890 (if router did 1:1 mapping)
                     string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
                     if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
                     {

@@ -20,8 +20,8 @@ namespace VibeDesk.UI
 
         public RemoteSessionWindow(VibeClient client)
         {
-            InitializeComponent();
             _client = client;
+            InitializeComponent();
 
             _client.OnFrameReceived += OnFrameReceived;
             _client.OnDisconnected += OnDisconnected;
@@ -118,6 +118,7 @@ namespace VibeDesk.UI
 
         private void UpdateStats()
         {
+            if (_client == null || !_client.IsConnected) return;
             TxtStats.Text = $"FPS: {_client.CurrentFps} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кб/с";
         }
 
@@ -216,7 +217,7 @@ namespace VibeDesk.UI
 
         private void CmbLiveMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (CmbLiveMode == null || !_client.IsConnected) return;
+            if (CmbLiveMode == null || _client == null || !_client.IsConnected) return;
 
             (float scale, int fps, int quality) = CmbLiveMode.SelectedIndex switch
             {

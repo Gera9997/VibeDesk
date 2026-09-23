@@ -60,8 +60,17 @@ namespace VibeDesk.Network
 
             _listener.NetworkReceiveUnconnectedEvent += (point, reader, messageType) =>
             {
-                OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
-                OnPunchReceived?.Invoke(point);
+                try
+                {
+                    byte[] data = reader.GetRemainingBytes();
+                    string msg = Encoding.UTF8.GetString(data);
+                    if (msg.StartsWith("VIBE_PUNCH") && point.Port != 19302 && point.Port != 3478)
+                    {
+                        OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
+                        OnPunchReceived?.Invoke(point);
+                    }
+                }
+                catch { }
             };
 
             _reassembler = new FrameReassembler();
