@@ -223,72 +223,50 @@ namespace VibeDesk.Update
         private static void ApplyUpdateAndRestart(string newFilePath, string currentExe)
         {
             string backupPath = currentExe + ".bak";
-            string currentDir = Path.GetDirectoryName(currentExe)!;
-            string updaterBat = Path.Combine(currentDir, "VibeDesk_updater.cmd");
-            int pid = Environment.ProcessId;
 
-            // Generate self-contained, robust batch script:
-            // 1. Waits for this PID to terminate
-            // 2. Retries moving newFilePath -> currentExe with 10 attempts
-            // 3. Starts currentExe
-            // 4. Deletes updater script itself
-            string script = $@"@echo off
-setlocal
-set PID={pid}
-set TARGET=""{currentExe}""
-set UPDATE=""{newFilePath}""
-set BACKUP=""{backupPath}""
-
-:WAIT_PROCESS
-tasklist /fi ""PID eq %PID%"" 2>nul | find ""%PID%"" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto WAIT_PROCESS
-)
-
-:: Small delay to let Windows release file locks
-timeout /t 1 /nobreak >nul
-
-set RETRY=0
-:RETRY_MOVE
-if exist %TARGET% (
-    move /y %TARGET% %BACKUP% >nul 2>&1
-)
-move /y %UPDATE% %TARGET% >nul 2>&1
-
-if not exist %TARGET% (
-    set /a RETRY+=1
-    if %RETRY% lss 10 (
-        timeout /t 1 /nobreak >nul
-        goto RETRY_MOVE
-    )
-)
-
-:: Clean up backup
-if exist %BACKUP% del /f /q %BACKUP% >nul 2>&1
-
-:: Start updated application
-start """" %TARGET%
-
-:: Self-destruct updater script
-(goto) 2>nul & del /f /q ""%~f0""
-";
-
-            File.WriteAllText(updaterBat, script);
-
-            var startInfo = new ProcessStartInfo
+            try
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{updaterBat}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                WorkingDirectory = currentDir
-            };
+                // 1. Remove old backup if present
+                try { if (File.Exists(backupPath)) File.Delete(backupPath); } catch { }
 
-            Process.Start(startInfo);
+                // 2. Rename running exe to backup (Windows NTFS allows renaming a running executable!)
+                File.Move(currentExe, backupPath, overwrite: true);
 
-            // Terminate current process immediately so all file handles and locks are released!
-            Environment.Exit(0);
+                // 3. Move newly downloaded update file into place as currentExe (instant, same volume, full Unicode support!)
+                File.Move(newFilePath, currentExe, overwrite: true);
+
+                // 4. Start the updated executable!
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = currentExe,
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(currentExe)
+                });
+
+                // 5. Exit immediately so the new instance runs clean
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                // Fallback: If direct move failed, use PowerShell with full Unicode support
+                try
+                {
+                    int pid = Environment.ProcessId;
+                    string psCmd = $"Start-Sleep -Seconds 1; Wait-Process -Id {pid} -Timeout 5 -ErrorAction SilentlyContinue; Move-Item -LiteralPath '{newFilePath}' -Destination '{currentExe}' -Force; Start-Process -FilePath '{currentExe}'";
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{psCmd}\"",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    });
+                    Environment.Exit(0);
+                }
+                catch
+                {
+                    throw new IOException($"Не удалось применить обновление: {ex.Message}", ex);
+                }
+            }
         }
     }
 }

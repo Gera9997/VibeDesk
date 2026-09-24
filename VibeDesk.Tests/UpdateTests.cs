@@ -116,7 +116,7 @@ namespace VibeDesk.Tests
                 // Copy real VibeDesk.exe or cmd.exe to originalExe and launch it!
                 File.Copy(Environment.ProcessPath ?? "cmd.exe", originalExe, overwrite: true);
                 File.WriteAllBytes(backupExe, new byte[512]);
-                File.WriteAllBytes(newExe, new byte[2048]);
+                File.Copy(Environment.ProcessPath ?? "cmd.exe", newExe, overwrite: true);
 
                 var proc = Process.Start(new ProcessStartInfo
                 {
@@ -130,12 +130,25 @@ namespace VibeDesk.Tests
                 {
                     Thread.Sleep(500);
                     // DO NOT delete backupExe first - test if File.Move(..., overwrite: true) works directly!
+                    long expectedLength = new FileInfo(newExe).Length;
                     File.Move(originalExe, backupExe, overwrite: true);
                     File.Move(newExe, originalExe, overwrite: true);
 
                     Assert.IsTrue(File.Exists(originalExe));
-                    Assert.AreEqual(2048, new FileInfo(originalExe).Length);
+                    Assert.AreEqual(expectedLength, new FileInfo(originalExe).Length);
                     Assert.IsTrue(File.Exists(backupExe));
+
+                    // Start the newly replaced executable!
+                    var proc2 = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = originalExe,
+                        Arguments = "--test-silent",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    });
+                    Assert.IsNotNull(proc2);
+                    Assert.IsTrue(proc2.Id > 0);
+                    try { proc2.Kill(); } catch { }
                 }
                 finally
                 {

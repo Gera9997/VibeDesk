@@ -1,20 +1,27 @@
 using System;
+using System.Reflection;
 
 namespace VibeDesk.Update
 {
     public static class AppVersion
     {
-        public const string Current = "1.2.6";
+        private static readonly string _assemblyVersion =
+            Assembly.GetExecutingAssembly().GetName().Version != null
+                ? $"{Assembly.GetExecutingAssembly().GetName().Version!.Major}.{Assembly.GetExecutingAssembly().GetName().Version!.Minor}.{Assembly.GetExecutingAssembly().GetName().Version!.Build}"
+                : "1.3.0";
+
+        public static string Current => _assemblyVersion;
         public static string FullTitle => $"v{Current}";
 
         /// <summary>
         /// Compares remote version tag (e.g. "v1.2.0" or "1.2.0") against current version.
         /// Returns true if remote version is strictly newer.
         /// </summary>
-        public static bool IsNewer(string? remoteTag, string currentVersion = Current)
+        public static bool IsNewer(string? remoteTag, string? currentVersion = null)
         {
             if (string.IsNullOrWhiteSpace(remoteTag)) return false;
 
+            currentVersion ??= Current;
             var remote = NormalizeVersion(remoteTag);
             var current = NormalizeVersion(currentVersion);
 
