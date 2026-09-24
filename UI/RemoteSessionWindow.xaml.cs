@@ -77,6 +77,8 @@ namespace VibeDesk.UI
 
         private void RenderLoop()
         {
+            using var decodeStream = new MemoryStream(1024 * 512);
+
             while (_renderRunning)
             {
                 _frameSignal.WaitOne(100);
@@ -93,15 +95,17 @@ namespace VibeDesk.UI
 
                 try
                 {
+                    decodeStream.Position = 0;
+                    decodeStream.SetLength(0);
+                    decodeStream.Write(bytesToDecode, 0, bytesToDecode.Length);
+                    decodeStream.Position = 0;
+
                     var bitmap = new BitmapImage();
-                    using (var ms = new MemoryStream(bytesToDecode))
-                    {
-                        bitmap.BeginInit();
-                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                        bitmap.StreamSource = ms;
-                        bitmap.EndInit();
-                        bitmap.Freeze(); // Enables cross-thread access and high performance
-                    }
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = decodeStream;
+                    bitmap.EndInit();
+                    bitmap.Freeze(); // Enables cross-thread access and high performance
 
                     _latestPendingFrame = bitmap;
 

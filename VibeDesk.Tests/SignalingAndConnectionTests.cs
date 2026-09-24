@@ -212,5 +212,24 @@ namespace VibeDesk.Tests
             Assert.AreEqual(10, readyData[0]);
             Assert.AreEqual(40, readyData[3]);
         }
+
+        [TestMethod]
+        public void TestVibePunchAndAckPacketBuilders()
+        {
+            string testId = "123456";
+            byte[] punchPacket = VibeDesk.Network.Protocol.PacketBuilder.CreatePunch(testId);
+            Assert.IsNotNull(punchPacket);
+            Assert.AreEqual((byte)VibeDesk.Network.Protocol.PacketType.VibePunch, punchPacket[0]);
+            int idLen = punchPacket[1];
+            string parsedId = System.Text.Encoding.UTF8.GetString(punchPacket, 2, idLen);
+            Assert.AreEqual(testId, parsedId);
+
+            byte[] ackPacket = VibeDesk.Network.Protocol.PacketBuilder.CreatePunchAck(testId);
+            Assert.IsNotNull(ackPacket);
+            Assert.AreEqual((byte)VibeDesk.Network.Protocol.PacketType.VibePunchAck, ackPacket[0]);
+            int ackLen = ackPacket[1];
+            string parsedAckId = System.Text.Encoding.UTF8.GetString(ackPacket, 2, ackLen);
+            Assert.AreEqual(testId, parsedAckId);
+        }
     }
 }

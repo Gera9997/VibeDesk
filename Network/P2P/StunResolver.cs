@@ -15,50 +15,16 @@ namespace VibeDesk.Network.P2P
             ("stun.cloudflare.com", 3478)
         };
 
-        public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0, string localIp = "")
+        public static async Task<IPEndPoint?> QueryAsync(UdpClient udp, string stunHost, int stunPort, int timeoutMs = 1500)
         {
-            foreach (var (host, port) in StunServers)
-            {
-                try
-                {
-                    var ep = await QueryServerAsync(host, port, localPort, localIp);
-                    if (ep != null)
-                    {
-                        return (ep, $"STUN успешен через {host}:{port} -> {ep.Address}:{ep.Port}");
-                    }
-                }
-                catch (Exception)
-                {
-                    // Try next server
-                }
-            }
-
-            return (null, "STUN серверы не ответили (возможно, UDP блокируется провайдером или порт занят)");
-        }
-
-        private static async Task<IPEndPoint?> QueryServerAsync(string stunHost, int stunPort, int localPort, string localIp = "")
-        {
-            using var udp = new UdpClient();
             try
             {
-                udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                IPAddress bindAddr = IPAddress.Any;
-                if (!string.IsNullOrEmpty(localIp) && IPAddress.TryParse(localIp, out var parsedIp))
-                {
-                    bindAddr = parsedIp;
-                }
-
-                if (localPort > 0 || !bindAddr.Equals(IPAddress.Any))
-                {
-                    udp.Client.Bind(new IPEndPoint(bindAddr, localPort));
-                }
-                udp.Client.ReceiveTimeout = 2000;
-
                 byte[] request = CreateBindingRequest();
                 await udp.SendAsync(request, request.Length, stunHost, stunPort);
 
+                using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
                 var receiveTask = udp.ReceiveAsync();
-                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(2000));
+                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(timeoutMs, cts.Token));
                 if (completedTask != receiveTask)
                 {
                     return null;
@@ -67,10 +33,60 @@ namespace VibeDesk.Network.P2P
                 var result = receiveTask.Result;
                 return ParseResponse(result.Buffer);
             }
-            finally
+            catch
             {
-                udp.Close();
+                return null;
             }
+        }
+
+        public static async Task<(IPEndPoint? EndPoint, bool IsSymmetric, string Message)> ProbeAsync(int localPort, string localIp = "")
+        {
+            IPAddress bindAddr = IPAddress.Any;
+            if (!string.IsNullOrEmpty(localIp) && IPAddress.TryParse(localIp, out var parsedIp))
+            {
+                bindAddr = parsedIp;
+            }
+
+            try
+            {
+                using var probe = new UdpClient();
+                probe.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                if (localPort > 0 || !bindAddr.Equals(IPAddress.Any))
+                {
+                    probe.Client.Bind(new IPEndPoint(bindAddr, localPort));
+                }
+
+                // 1. Query Google STUN
+                var googleEp = await QueryAsync(probe, "stun.l.google.com", 19302, timeoutMs: 1500);
+
+                // 2. From the SAME socket, query Cloudflare STUN to detect Symmetric NAT
+                var cfEp = await QueryAsync(probe, "stun.cloudflare.com", 3478, timeoutMs: 1500);
+
+                bool isSymmetric = false;
+                if (googleEp != null && cfEp != null)
+                {
+                    isSymmetric = googleEp.Port != cfEp.Port;
+                }
+
+                var primary = googleEp ?? cfEp;
+                if (primary != null)
+                {
+                    string natType = isSymmetric ? "Symmetric NAT (порт меняется)" : "Cone/EIM NAT (порт постоянный)";
+                    return (primary, isSymmetric, $"STUN успешен: {primary.Address}:{primary.Port} [{natType}]");
+                }
+            }
+            catch (Exception ex)
+            {
+                return (null, false, $"Ошибка STUN probe: {ex.Message}");
+            }
+
+            return (null, false, "STUN серверы не ответили (возможно, UDP блокируется провайдером)");
+        }
+
+        public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0, string localIp = "")
+        {
+            var (ep, _, msg) = await ProbeAsync(localPort, localIp);
+            return (ep, msg);
         }
 
         public static byte[] CreateBindingRequest()

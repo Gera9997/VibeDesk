@@ -14,7 +14,9 @@ namespace VibeDesk.Network.Protocol
         Pong = 5,
         ScreenInfo = 6,
         StreamSettings = 7,
-        FrameAck = 8
+        FrameAck = 8,
+        VibePunch = 9,
+        VibePunchAck = 10
     }
 
     public static class PacketBuilder
@@ -129,6 +131,26 @@ namespace VibeDesk.Network.Protocol
             byte[] packet = new byte[1 + 4];
             packet[0] = (byte)PacketType.FrameAck;
             BitConverter.TryWriteBytes(packet.AsSpan(1, 4), frameId);
+            return packet;
+        }
+
+        public static byte[] CreatePunch(string deviceId)
+        {
+            byte[] idBytes = Encoding.UTF8.GetBytes(deviceId ?? "");
+            byte[] packet = new byte[1 + 1 + idBytes.Length];
+            packet[0] = (byte)PacketType.VibePunch;
+            packet[1] = (byte)idBytes.Length;
+            Buffer.BlockCopy(idBytes, 0, packet, 2, idBytes.Length);
+            return packet;
+        }
+
+        public static byte[] CreatePunchAck(string deviceId)
+        {
+            byte[] idBytes = Encoding.UTF8.GetBytes(deviceId ?? "");
+            byte[] packet = new byte[1 + 1 + idBytes.Length];
+            packet[0] = (byte)PacketType.VibePunchAck;
+            packet[1] = (byte)idBytes.Length;
+            Buffer.BlockCopy(idBytes, 0, packet, 2, idBytes.Length);
             return packet;
         }
     }

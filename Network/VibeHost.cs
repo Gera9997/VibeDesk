@@ -26,7 +26,8 @@ namespace VibeDesk.Network
 
         private Thread? _streamingThread;
         private volatile bool _isRunning = false;
-        private volatile int _targetFps = 60;
+        private volatile int _targetFps = 25;
+        private volatile int _maxBitrateKbps = 3500;
         private uint _frameCounter = 0;
         private volatile uint _lastClientAckedFrameId = 0;
         private uint _lastSentFrameId = 0;
@@ -47,6 +48,7 @@ namespace VibeDesk.Network
 
         public int CurrentFps { get; private set; }
         public double OutgoingKbps { get; private set; }
+        public int MaxBitrateKbps { get => _maxBitrateKbps; set => _maxBitrateKbps = Math.Clamp(value, 500, 50000); }
 
         public NetManager RawNetManager => _netServer;
 
@@ -68,6 +70,33 @@ namespace VibeDesk.Network
             {
                 try
                 {
+                    if (point.Port == 19302 || point.Port == 3478) return;
+
+                    if (reader.AvailableBytes >= 1)
+                    {
+                        byte firstByte = reader.PeekByte();
+                        if (firstByte == (byte)PacketType.VibePunch)
+                        {
+                            reader.GetByte();
+                            int idLen = reader.AvailableBytes > 0 ? reader.GetByte() : 0;
+                            string fromId = idLen > 0 && reader.AvailableBytes >= idLen ? Encoding.UTF8.GetString(reader.GetRemainingBytes()) : "";
+                            OnStatusChanged?.Invoke($"🥊 [Punch] Получен от клиента {point} (ID: {fromId})");
+                            OnPunchReceived?.Invoke(point);
+
+                            // Send VibePunchAck response immediately
+                            byte[] ackPacket = PacketBuilder.CreatePunchAck(DeviceId);
+                            _netServer.SendUnconnectedMessage(ackPacket, point);
+                            return;
+                        }
+
+                        if (firstByte == (byte)PacketType.VibePunchAck)
+                        {
+                            reader.GetByte();
+                            OnPunchReceived?.Invoke(point);
+                            return;
+                        }
+                    }
+
                     byte[] data = reader.GetRemainingBytes();
                     string msg = Encoding.UTF8.GetString(data);
 
@@ -82,7 +111,7 @@ namespace VibeDesk.Network
                         }
                     }
 
-                    if (msg.StartsWith("VIBE_PUNCH") && point.Port != 19302 && point.Port != 3478)
+                    if (msg.StartsWith("VIBE_PUNCH"))
                     {
                         OnPunchReceived?.Invoke(point);
                         return;
@@ -152,13 +181,14 @@ namespace VibeDesk.Network
             OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
         }
 
-        public bool Start(int targetFps = 60, int jpegQuality = 60, float scale = 0.85f, string bindIp = "")
+        public bool Start(int targetFps = 25, int jpegQuality = 55, float scale = 0.70f, string bindIp = "", int maxBitrateKbps = 3500)
         {
             if (_isRunning) return true;
 
             try
             {
                 _targetFps = Math.Clamp(targetFps, 15, 120);
+                _maxBitrateKbps = Math.Clamp(maxBitrateKbps, 500, 50000);
                 _captureManager = new ScreenCaptureManager(jpegQuality, scale);
             }
             catch (Exception ex)
@@ -179,7 +209,7 @@ namespace VibeDesk.Network
                 return false;
             }
 
-            // Enable 1ms multimedia timer resolution on Windows for precise 60-120 FPS
+            // Enable 1ms multimedia timer resolution on Windows for precise 25-120 FPS
             try { Win32.timeBeginPeriod(1); } catch { }
 
             _isRunning = true;
@@ -191,7 +221,7 @@ namespace VibeDesk.Network
             };
             _streamingThread.Start();
 
-            OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок: {_captureManager.ActiveEngineName}, FPS: {_targetFps}");
+            OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок: {_captureManager.ActiveEngineName}, FPS: {_targetFps}, Кэп: {_maxBitrateKbps} Кбит/с");
             return true;
         }
 
@@ -215,6 +245,7 @@ namespace VibeDesk.Network
             var fpsStopwatch = Stopwatch.StartNew();
             int framesThisSecond = 0;
             long bytesSentThisSecond = 0;
+            long lastKeepaliveMs = 0;
 
             while (_isRunning)
             {
@@ -234,11 +265,21 @@ namespace VibeDesk.Network
                         fpsStopwatch.Restart();
                     }
 
+                    // NAT Keepalive: every 10 seconds send keepalive to keep NAT pinhole open on router
+                    if (_connectedPeer == null && fpsStopwatch.ElapsedMilliseconds - lastKeepaliveMs >= 10000)
+                    {
+                        lastKeepaliveMs = fpsStopwatch.ElapsedMilliseconds;
+                        try
+                        {
+                            byte[] pingPkt = PacketBuilder.CreatePing(Stopwatch.GetTimestamp());
+                            _netServer.SendUnconnectedMessage(pingPkt, new IPEndPoint(IPAddress.Parse("8.8.8.8"), 19302));
+                        }
+                        catch { }
+                    }
+
                     var peer = _connectedPeer;
                     if (peer != null && peer.ConnectionState == ConnectionState.Connected && _captureManager != null)
                     {
-                        // Flow control & backpressure:
-                        // Prevent pushing new frames if previous frame is still in-flight
                         uint inFlight = _lastSentFrameId > _lastClientAckedFrameId ? (_lastSentFrameId - _lastClientAckedFrameId) : 0;
                         long nowTicks = Stopwatch.GetTimestamp();
                         long msSinceLastSend = _lastFrameSentTicks == 0 ? 999 :
@@ -247,19 +288,28 @@ namespace VibeDesk.Network
                         bool allowSend = true;
                         bool forceKeyframe = framesThisSecond == 0;
 
-                        if (inFlight >= 1)
+                        // Non-blocking sliding window:
+                        // Allow up to 3 frames in-flight without freezing the capture thread!
+                        if (inFlight > 3)
                         {
-                            if (msSinceLastSend < 40)
+                            if (msSinceLastSend > 180)
                             {
-                                allowSend = false;
-                            }
-                            else
-                            {
-                                // Timeout: client ACK was dropped or network dropped frame.
-                                // Reset in-flight state and send fresh keyframe.
+                                // Timeout: previous ACKs or frames were lost in network. Reset window and resume.
                                 _lastClientAckedFrameId = _lastSentFrameId;
                                 forceKeyframe = true;
                             }
+                            else
+                            {
+                                // Network/client buffer is full: skip this frame gracefully to avoid bufferbloat
+                                allowSend = false;
+                            }
+                        }
+
+                        // Strict bitrate cap enforcement (e.g. 3500 Kbps = ~448 KB/s)
+                        long maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
+                        if (bytesSentThisSecond >= maxBytesPerSec && framesThisSecond > 1)
+                        {
+                            allowSend = false;
                         }
 
                         if (allowSend)
@@ -284,6 +334,13 @@ namespace VibeDesk.Network
 
                                     peer.Send(chunkPacket, DeliveryMethod.Unreliable);
                                     bytesSentThisSecond += chunkPacket.Length;
+
+                                    // Micro-pacing: every 4 chunks (~4.8 KB), flush and micro-pause to prevent router buffer spikes
+                                    if ((i + 1) % 4 == 0 && i + 1 < totalChunks)
+                                    {
+                                        _netServer.TriggerUpdate();
+                                        Thread.SpinWait(2000);
+                                    }
                                 }
 
                                 _netServer.TriggerUpdate();
@@ -430,7 +487,7 @@ namespace VibeDesk.Network
 
             Task.Run(async () =>
             {
-                byte[] punch = Encoding.UTF8.GetBytes("VIBE_PUNCH");
+                byte[] punch = PacketBuilder.CreatePunch(DeviceId);
                 for (int i = 0; i < 4; i++)
                 {
                     try
@@ -438,7 +495,7 @@ namespace VibeDesk.Network
                         _netServer.SendUnconnectedMessage(punch, target);
                     }
                     catch { }
-                    await Task.Delay(25);
+                    await Task.Delay(30);
                 }
             });
         }

@@ -33,6 +33,7 @@ namespace VibeDesk.Network
         public event Action<int, int>? OnScreenInfoReceived;
         public event Action<string>? OnClipboardReceived;
         public event Action<IPEndPoint>? OnPunchReceived;
+        public event Action<IPEndPoint>? OnPunchAckReceived;
 
         public const int DefaultClientPort = 15891;
         public bool IsConnected => _serverPeer != null && _serverPeer.ConnectionState == ConnectionState.Connected;
@@ -62,9 +63,34 @@ namespace VibeDesk.Network
             {
                 try
                 {
+                    if (point.Port == 19302 || point.Port == 3478) return;
+
+                    if (reader.AvailableBytes >= 1)
+                    {
+                        byte firstByte = reader.PeekByte();
+                        if (firstByte == (byte)PacketType.VibePunchAck)
+                        {
+                            reader.GetByte();
+                            int idLen = reader.AvailableBytes > 0 ? reader.GetByte() : 0;
+                            string id = idLen > 0 && reader.AvailableBytes >= idLen ? Encoding.UTF8.GetString(reader.GetRemainingBytes()) : "";
+                            OnStatusChanged?.Invoke($"✅ Получен Punch-ACK от хоста: {point}");
+                            OnPunchAckReceived?.Invoke(point);
+                            OnPunchReceived?.Invoke(point);
+                            return;
+                        }
+
+                        if (firstByte == (byte)PacketType.VibePunch)
+                        {
+                            reader.GetByte();
+                            OnStatusChanged?.Invoke($"🥊 Получен UDP-пакет (Punch) от: {point}");
+                            OnPunchReceived?.Invoke(point);
+                            return;
+                        }
+                    }
+
                     byte[] data = reader.GetRemainingBytes();
                     string msg = Encoding.UTF8.GetString(data);
-                    if (msg.StartsWith("VIBE_PUNCH") && point.Port != 19302 && point.Port != 3478)
+                    if (msg.StartsWith("VIBE_PUNCH"))
                     {
                         OnStatusChanged?.Invoke($"Получен UDP-пакет (Punch) от: {point}");
                         OnPunchReceived?.Invoke(point);
@@ -373,6 +399,16 @@ namespace VibeDesk.Network
                 byte[] packet = PacketBuilder.CreateStreamSettings(scale, fps, quality);
                 _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
             }
+        }
+
+        public void Punch(IPEndPoint target, string deviceId = "")
+        {
+            try
+            {
+                byte[] packet = PacketBuilder.CreatePunch(deviceId);
+                _netClient.SendUnconnectedMessage(packet, target);
+            }
+            catch { }
         }
 
         public void Dispose()

@@ -30,8 +30,8 @@ namespace VibeDesk
         private IPEndPoint? _physicalPublicEndPoint;
         private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
-        private int _targetFps = 60;
-        private float _targetScale = 1.0f;
+        private int _targetFps = 25;
+        private float _targetScale = 0.75f;
 
         public MainWindow()
         {
@@ -180,15 +180,22 @@ namespace VibeDesk
         private async Task ResolveStunAsync()
         {
             TxtPublicEndpoint.Text = "STUN поиск...";
-            AppendLog("🔍 Запрос STUN (определение внешнего IP и порта)...");
+            AppendLog("🔍 Запрос STUN (определение внешнего IP и порта на порту хоста)...");
 
-            // 1. Resolve through physical network interface (bypasses VPN/proxy tunnels)
-            var (physEp, physMsg) = await StunResolver.ResolveAsync(0, _myLocalIp);
+            // 1. Resolve through physical network interface ON THE EXACT HOST PORT
+            var (physEp, isPhysSym, physMsg) = await StunResolver.ProbeAsync(_host.Port, _myLocalIp);
             _physicalPublicEndPoint = physEp;
 
-            // 2. Resolve through default route
-            var (ep, msg) = await StunResolver.ResolveAsync(_host.Port);
-            _myPublicEndPoint = ep;
+            // 2. Resolve through default route if needed
+            IPEndPoint? ep = null;
+            string msg = "";
+            if (_physicalPublicEndPoint == null)
+            {
+                var (defEp, isDefSym, defMsg) = await StunResolver.ProbeAsync(_host.Port);
+                ep = defEp;
+                msg = defMsg;
+            }
+            _myPublicEndPoint = ep ?? _physicalPublicEndPoint;
 
             var primaryEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
             if (primaryEp != null)
@@ -203,7 +210,7 @@ namespace VibeDesk
             else
             {
                 TxtPublicEndpoint.Text = "Локальный режим";
-                AppendLog($"⚠️ {msg}");
+                AppendLog($"⚠️ {physMsg}");
             }
         }
 
@@ -242,7 +249,7 @@ namespace VibeDesk
                 });
             };
 
-            bool started = _host.Start(_targetFps, jpegQuality: 70, scale: _targetScale, bindIp: _myLocalIp);
+            bool started = _host.Start(_targetFps, jpegQuality: 55, scale: _targetScale, bindIp: _myLocalIp, maxBitrateKbps: 3500);
             if (started)
             {
                 TryOpenUpnpPort(_host.Port);
@@ -380,7 +387,10 @@ namespace VibeDesk
                 {
                     AppendLog($"🔎 Поиск хоста {FormatId(target)} в локальной сети (LAN) и через глобальные серверы...");
 
-                    // 0. Start dedicated client socket bound to physical adapter
+                    // 0. Resolve STUN ON EXACT CLIENT PORT before starting client socket!
+                    var (clientStunEp, isClientSym, clientStunMsg) = await StunResolver.ProbeAsync(VibeClient.DefaultClientPort, _myLocalIp);
+
+                    // Start dedicated client socket bound to physical adapter ON PORT 15891
                     var client = new VibeClient();
                     client.Start(VibeClient.DefaultClientPort, bindIp: _myLocalIp);
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
@@ -388,14 +398,17 @@ namespace VibeDesk
                     {
                         _lastPunchReceivedFrom = ep;
                     };
+                    client.OnPunchAckReceived += ep =>
+                    {
+                        _lastPunchReceivedFrom = ep;
+                    };
 
                     int clientLocalPort = client.LocalPort;
+                    string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
+                    int clientPubPort = clientStunEp?.Port ?? clientLocalPort;
 
                     // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network, bound to real physical adapter)
                     var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, _myLocalIp, timeoutMs: 1500);
-
-                    // 2. Concurrently resolve STUN on client's physical network adapter (port 0 = non-conflicting ephemeral socket)
-                    var clientStunTask = StunResolver.ResolveAsync(0, _myLocalIp);
 
                     // Check LAN Discovery first (instant 1-20ms in local Wi-Fi)
                     var lanEp = await lanDiscoveryTask;
@@ -424,11 +437,7 @@ namespace VibeDesk
                         AppendLog("📡 В домашней сети хост не ответил на бродкаст, ожидание глобального сервера...");
                     }
 
-                    // 3. Prepare global signaling with real client socket public port!
-                    var (clientStunEp, _) = await clientStunTask;
-                    int clientPubPort = clientStunEp?.Port ?? clientLocalPort;
-                    string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
-
+                    // 2. Prepare global signaling with real client socket public port!
                     var myInfo = new PeerEndpointInfo
                     {
                         DeviceId = _myDeviceId,
@@ -460,6 +469,28 @@ namespace VibeDesk
                         AppendLog($"   -> Физический IP хоста: {hostInfo.PhysicalPublicIp}:{hostInfo.PhysicalPublicPort}");
                     }
                     AppendLog($"   -> Внешний IP хоста: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
+
+                    // Launch continuous client-side UDP punch towards host endpoints
+                    var clientPunchTargets = new List<IPEndPoint>();
+                    if (IPAddress.TryParse(hostInfo.PhysicalPublicIp, out var clientPhysTarget) && hostInfo.PhysicalPublicPort > 0)
+                        clientPunchTargets.Add(new IPEndPoint(clientPhysTarget, hostInfo.PhysicalPublicPort));
+                    if (IPAddress.TryParse(hostInfo.PublicIp, out var clientPubTarget) && hostInfo.PublicPort > 0)
+                        clientPunchTargets.Add(new IPEndPoint(clientPubTarget, hostInfo.PublicPort));
+                    if (IPAddress.TryParse(hostInfo.LocalIp, out var clientLocTarget) && hostInfo.LocalPort > 0)
+                        clientPunchTargets.Add(new IPEndPoint(clientLocTarget, hostInfo.LocalPort));
+
+                    using var clientPunchCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    _ = Task.Run(async () =>
+                    {
+                        while (!clientPunchCts.Token.IsCancellationRequested && !client.IsConnected)
+                        {
+                            foreach (var targetEp in clientPunchTargets)
+                            {
+                                client.Punch(targetEp, _myDeviceId);
+                            }
+                            try { await Task.Delay(200, clientPunchCts.Token); } catch { break; }
+                        }
+                    });
 
                     bool isLocal = IsDirectLanAccessible(hostInfo);
                     bool connected = false;
