@@ -11,6 +11,7 @@ namespace VibeDesk.Capture
     public class DxgiScreenCapture : IScreenCapturer
     {
         public string Name => "DirectX 11 (DXGI)";
+        public bool HasNewFrame { get; private set; } = true;
         public int ScreenWidth { get; private set; }
         public int ScreenHeight { get; private set; }
 
@@ -113,6 +114,7 @@ namespace VibeDesk.Capture
                     // DXGI_ERROR_WAIT_TIMEOUT is normal if screen did not update
                     if (acquireResult.Code == unchecked((int)0x887A0027)) // DXGI_ERROR_WAIT_TIMEOUT
                     {
+                        HasNewFrame = false;
                         return _reusableBitmap; // return last frame
                     }
 
@@ -121,8 +123,11 @@ namespace VibeDesk.Capture
                     {
                         Initialize();
                     }
+                    HasNewFrame = false;
                     return null;
                 }
+
+                HasNewFrame = true;
 
                 using (desktopResource)
                 {

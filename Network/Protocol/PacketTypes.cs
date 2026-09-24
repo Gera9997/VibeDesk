@@ -13,7 +13,8 @@ namespace VibeDesk.Network.Protocol
         Ping = 4,
         Pong = 5,
         ScreenInfo = 6,
-        StreamSettings = 7
+        StreamSettings = 7,
+        FrameAck = 8
     }
 
     public static class PacketBuilder
@@ -120,6 +121,14 @@ namespace VibeDesk.Network.Protocol
             BitConverter.TryWriteBytes(packet.AsSpan(1, 4), scale);
             BitConverter.TryWriteBytes(packet.AsSpan(5, 4), fps);
             BitConverter.TryWriteBytes(packet.AsSpan(9, 4), quality);
+            return packet;
+        }
+
+        public static byte[] CreateFrameAck(uint frameId)
+        {
+            byte[] packet = new byte[1 + 4];
+            packet[0] = (byte)PacketType.FrameAck;
+            BitConverter.TryWriteBytes(packet.AsSpan(1, 4), frameId);
             return packet;
         }
     }

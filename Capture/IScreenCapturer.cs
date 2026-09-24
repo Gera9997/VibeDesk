@@ -8,6 +8,7 @@ namespace VibeDesk.Capture
         string Name { get; }
         bool Initialize();
         Bitmap? Capture();
+        bool HasNewFrame { get; }
         int ScreenWidth { get; }
         int ScreenHeight { get; }
     }

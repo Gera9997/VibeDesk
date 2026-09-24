@@ -17,12 +17,18 @@ namespace VibeDesk.Capture
         private Bitmap? _scaledBitmap;
         private Graphics? _scaledGraphics;
 
-        public float ResolutionScale { get; private set; } = 1.0f;
+        private int _lastCursorX = -1;
+        private int _lastCursorY = -1;
+        private IntPtr _lastCursorHandle = IntPtr.Zero;
+        private bool _lastCursorVisible = false;
+        private long _lastEncodedTimestampTicks = 0;
+
+        public float ResolutionScale { get; private set; } = 0.85f;
         public string ActiveEngineName => _capturer.Name;
         public int ScreenWidth => _capturer.ScreenWidth;
         public int ScreenHeight => _capturer.ScreenHeight;
 
-        public ScreenCaptureManager(int jpegQuality = 65, float scale = 1.0f)
+        public ScreenCaptureManager(int jpegQuality = 60, float scale = 0.85f)
         {
             ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
@@ -56,7 +62,7 @@ namespace VibeDesk.Capture
 
         public void ResetForceFrame()
         {
-            // Ready for immediate next frame
+            _lastEncodedTimestampTicks = 0;
         }
 
         public unsafe byte[]? CaptureAndEncode(bool forceFrame = false)
@@ -76,6 +82,41 @@ namespace VibeDesk.Capture
 
                 if (bmp == null) return null;
             }
+
+            // Check cursor changes
+            bool cursorChanged = false;
+            try
+            {
+                var ci = new Win32.CURSORINFO { cbSize = Marshal.SizeOf<Win32.CURSORINFO>() };
+                if (Win32.GetCursorInfo(out ci))
+                {
+                    bool visible = (ci.flags & Win32.CURSOR_SHOWING) != 0 && ci.hCursor != IntPtr.Zero;
+                    if (visible != _lastCursorVisible ||
+                        (visible && (ci.ptScreenPos.X != _lastCursorX || ci.ptScreenPos.Y != _lastCursorY || ci.hCursor != _lastCursorHandle)))
+                    {
+                        cursorChanged = true;
+                        _lastCursorX = ci.ptScreenPos.X;
+                        _lastCursorY = ci.ptScreenPos.Y;
+                        _lastCursorHandle = ci.hCursor;
+                        _lastCursorVisible = visible;
+                    }
+                }
+            }
+            catch { }
+
+            long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            long elapsedMsSinceLastEncode = _lastEncodedTimestampTicks == 0 ? long.MaxValue :
+                (long)((nowTicks - _lastEncodedTimestampTicks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+
+            // Screen dirty checking:
+            // If screen pixels did not change, cursor did not move, not forced, and heartbeat interval (< 250ms / 4 FPS) has not elapsed:
+            // return null to completely save network bandwidth & avoid bufferbloat!
+            if (!_capturer.HasNewFrame && !cursorChanged && !forceFrame && elapsedMsSinceLastEncode < 250)
+            {
+                return null;
+            }
+
+            _lastEncodedTimestampTicks = nowTicks;
 
             // Draw host's real cursor onto the bitmap so it's visible in remote stream
             DrawCursor(bmp);

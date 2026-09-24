@@ -28,6 +28,9 @@ namespace VibeDesk.Network
         private volatile bool _isRunning = false;
         private volatile int _targetFps = 60;
         private uint _frameCounter = 0;
+        private volatile uint _lastClientAckedFrameId = 0;
+        private uint _lastSentFrameId = 0;
+        private long _lastFrameSentTicks = 0;
 
         public event Action<string>? OnStatusChanged;
         public event Action<NetPeer>? OnClientConnected;
@@ -56,7 +59,7 @@ namespace VibeDesk.Network
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
-                DisconnectTimeout = 10000,
+                DisconnectTimeout = 20000,
                 UnconnectedMessagesEnabled = true,
                 UpdateTime = 5
             };
@@ -115,6 +118,9 @@ namespace VibeDesk.Network
             _listener.PeerConnectedEvent += peer =>
             {
                 _connectedPeer = peer;
+                _lastClientAckedFrameId = 0;
+                _lastSentFrameId = 0;
+                _lastFrameSentTicks = 0;
                 OnStatusChanged?.Invoke($"⚡ Клиент подключен: {peer.Address}:{peer.Port}");
                 OnClientConnected?.Invoke(peer);
 
@@ -146,7 +152,7 @@ namespace VibeDesk.Network
             OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
         }
 
-        public bool Start(int targetFps = 60, int jpegQuality = 70, float scale = 1.0f)
+        public bool Start(int targetFps = 60, int jpegQuality = 60, float scale = 0.85f)
         {
             if (_isRunning) return true;
 
@@ -225,27 +231,46 @@ namespace VibeDesk.Network
                     var peer = _connectedPeer;
                     if (peer != null && peer.ConnectionState == ConnectionState.Connected && _captureManager != null)
                     {
-                        byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
-                        if (frameData != null && frameData.Length > 0)
+                        // Flow control & backpressure:
+                        // Prevent pushing new frames if previous frame is still in-flight
+                        uint inFlight = _lastSentFrameId > _lastClientAckedFrameId ? (_lastSentFrameId - _lastClientAckedFrameId) : 0;
+                        long nowTicks = Stopwatch.GetTimestamp();
+                        long msSinceLastSend = _lastFrameSentTicks == 0 ? 999 :
+                            (long)((nowTicks - _lastFrameSentTicks) * 1000.0 / Stopwatch.Frequency);
+
+                        bool allowSend = true;
+                        if (inFlight >= 1 && msSinceLastSend < 40)
                         {
-                            uint frameId = unchecked(++_frameCounter);
-                            int totalLength = frameData.Length;
-                            int chunkSize = PacketBuilder.MaxChunkPayloadSize;
-                            ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+                            allowSend = false;
+                        }
 
-                            for (ushort i = 0; i < totalChunks; i++)
+                        if (allowSend)
+                        {
+                            byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
+                            if (frameData != null && frameData.Length > 0)
                             {
-                                if (peer.ConnectionState != ConnectionState.Connected) break;
-                                int offset = i * chunkSize;
-                                int length = Math.Min(chunkSize, totalLength - offset);
-                                byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
+                                uint frameId = unchecked(++_frameCounter);
+                                _lastSentFrameId = frameId;
+                                _lastFrameSentTicks = nowTicks;
 
-                                peer.Send(chunkPacket, DeliveryMethod.Unreliable);
-                                bytesSentThisSecond += chunkPacket.Length;
+                                int totalLength = frameData.Length;
+                                int chunkSize = PacketBuilder.MaxChunkPayloadSize;
+                                ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+
+                                for (ushort i = 0; i < totalChunks; i++)
+                                {
+                                    if (peer.ConnectionState != ConnectionState.Connected) break;
+                                    int offset = i * chunkSize;
+                                    int length = Math.Min(chunkSize, totalLength - offset);
+                                    byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
+
+                                    peer.Send(chunkPacket, DeliveryMethod.Unreliable);
+                                    bytesSentThisSecond += chunkPacket.Length;
+                                }
+
+                                _netServer.TriggerUpdate();
+                                framesThisSecond++;
                             }
-
-                            _netServer.TriggerUpdate();
-                            framesThisSecond++;
                         }
                     }
                 }
@@ -293,6 +318,17 @@ namespace VibeDesk.Network
                     {
                         long ticks = reader.GetLong();
                         peer.Send(PacketBuilder.CreatePong(ticks), DeliveryMethod.Unreliable);
+                    }
+                    break;
+
+                case PacketType.FrameAck:
+                    if (reader.AvailableBytes >= 4)
+                    {
+                        uint ackFrameId = reader.GetUInt();
+                        if (ackFrameId > _lastClientAckedFrameId)
+                        {
+                            _lastClientAckedFrameId = ackFrameId;
+                        }
                     }
                     break;
 

@@ -53,7 +53,7 @@ namespace VibeDesk.Network
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 UnsyncedEvents = true,
-                DisconnectTimeout = 10000,
+                DisconnectTimeout = 20000,
                 UnconnectedMessagesEnabled = true,
                 UpdateTime = 5
             };
@@ -74,9 +74,13 @@ namespace VibeDesk.Network
             };
 
             _reassembler = new FrameReassembler();
-            _reassembler.OnFrameReady += frameBytes =>
+            _reassembler.OnFrameReadyWithId += (frameId, frameBytes) =>
             {
                 _framesThisSecond++;
+                if (_serverPeer != null && _serverPeer.ConnectionState == ConnectionState.Connected)
+                {
+                    _serverPeer.Send(PacketBuilder.CreateFrameAck(frameId), DeliveryMethod.Unreliable);
+                }
                 OnFrameReceived?.Invoke(frameBytes);
             };
 
@@ -146,6 +150,11 @@ namespace VibeDesk.Network
                 }
             }
 
+            if (_serverPeer != null && _serverPeer.ConnectionState != ConnectionState.Disconnected)
+            {
+                _serverPeer.Disconnect();
+            }
+
             StartPollThread();
 
             OnStatusChanged?.Invoke($"Подключение к {host}:{port}...");
@@ -210,7 +219,7 @@ namespace VibeDesk.Network
                         if (IsConnected)
                         {
                             _lastPingSendTicks = Stopwatch.GetTimestamp();
-                            _serverPeer!.Send(PacketBuilder.CreatePing(_lastPingSendTicks), DeliveryMethod.ReliableOrdered);
+                            _serverPeer!.Send(PacketBuilder.CreatePing(_lastPingSendTicks), DeliveryMethod.Unreliable);
                         }
                     }
                 }

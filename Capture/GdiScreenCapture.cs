@@ -8,6 +8,7 @@ namespace VibeDesk.Capture
     public class GdiScreenCapture : IScreenCapturer
     {
         public string Name => "GDI+ (Win32)";
+        public bool HasNewFrame => true;
         public int ScreenWidth { get; private set; }
         public int ScreenHeight { get; private set; }
 

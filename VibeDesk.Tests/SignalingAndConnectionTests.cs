@@ -146,5 +146,45 @@ namespace VibeDesk.Tests
             Assert.IsFalse(disconnected, $"Client should not disconnect during streaming: {disconnectReason}");
             Assert.IsTrue(framesReceived > 20, $"Expected >20 frames, got {framesReceived}");
         }
+
+        [TestMethod]
+        public void TestFrameAckPacketBuilderAndParser()
+        {
+            uint testFrameId = 12345;
+            byte[] packet = VibeDesk.Network.Protocol.PacketBuilder.CreateFrameAck(testFrameId);
+
+            Assert.IsNotNull(packet);
+            Assert.AreEqual(5, packet.Length);
+            Assert.AreEqual((byte)VibeDesk.Network.Protocol.PacketType.FrameAck, packet[0]);
+
+            uint parsedFrameId = BitConverter.ToUInt32(packet.AsSpan(1, 4));
+            Assert.AreEqual(testFrameId, parsedFrameId);
+        }
+
+        [TestMethod]
+        public void TestFrameReassemblerWithIdAndSlotClearing()
+        {
+            var reassembler = new VibeDesk.Network.Protocol.FrameReassembler();
+            uint? readyFrameId = null;
+            byte[]? readyData = null;
+
+            reassembler.OnFrameReadyWithId += (id, data) =>
+            {
+                readyFrameId = id;
+                readyData = data;
+            };
+
+            // Create chunk for frame 42 (1 chunk total)
+            byte[] payload = new byte[] { 10, 20, 30, 40 };
+            byte[] chunkPacket = VibeDesk.Network.Protocol.PacketBuilder.CreateFrameChunk(42, 0, 1, payload, 0, payload.Length);
+
+            reassembler.ProcessChunk(chunkPacket);
+
+            Assert.AreEqual(42u, readyFrameId);
+            Assert.IsNotNull(readyData);
+            Assert.AreEqual(4, readyData.Length);
+            Assert.AreEqual(10, readyData[0]);
+            Assert.AreEqual(40, readyData[3]);
+        }
     }
 }

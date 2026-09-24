@@ -32,6 +32,7 @@ namespace VibeDesk.Network.Protocol
         private uint _lastCompletedFrameId = 0;
 
         public event Action<byte[]>? OnFrameReady;
+        public event Action<uint, byte[]>? OnFrameReadyWithId;
 
         public FrameReassembler()
         {
@@ -131,7 +132,17 @@ namespace VibeDesk.Network.Protocol
                     _lastCompletedFrameId = frameId;
                     slot.Reset();
 
+                    // Discard any older incomplete frames to prevent stale backlog
+                    for (int j = 0; j < MaxActiveSlots; j++)
+                    {
+                        if (_slots[j].IsActive && _slots[j].FrameId < frameId)
+                        {
+                            _slots[j].Reset();
+                        }
+                    }
+
                     OnFrameReady?.Invoke(fullFrame);
+                    OnFrameReadyWithId?.Invoke(frameId, fullFrame);
                 }
             }
         }
