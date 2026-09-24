@@ -49,15 +49,27 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
-        public async Task TestStunResolutionDiagnostic()
+        public void TestStunPacketCreationAndParsing()
         {
-            var (epDefault, msgDefault) = await StunResolver.ResolveAsync(0);
-            Assert.IsNotNull(epDefault, "Default STUN should resolve");
-            Assert.IsTrue(epDefault.Port > 0);
-
             byte[] req = StunResolver.CreateBindingRequest();
             Assert.AreEqual(20, req.Length);
             Assert.AreEqual(0x01, req[1]);
+
+            // Fake STUN XOR-MAPPED-ADDRESS response for 1.2.3.4:12345
+            byte[] resp = new byte[32];
+            resp[0] = 0x01; resp[1] = 0x01; // Binding Response
+            resp[4] = 0x21; resp[5] = 0x12; resp[6] = 0xA4; resp[7] = 0x42; // Magic cookie
+            resp[20] = 0x00; resp[21] = 0x20; // XOR-MAPPED-ADDRESS
+            resp[22] = 0x00; resp[23] = 0x08; // Length 8
+            resp[24] = 0x00; resp[25] = 0x01; // IPv4
+            ushort portXor = 12345 ^ 0x2112;
+            resp[26] = (byte)(portXor >> 8); resp[27] = (byte)(portXor & 0xFF);
+            resp[28] = (byte)(1 ^ 0x21); resp[29] = (byte)(2 ^ 0x12); resp[30] = (byte)(3 ^ 0xA4); resp[31] = (byte)(4 ^ 0x42);
+
+            var ep = StunResolver.ParseResponse(resp);
+            Assert.IsNotNull(ep);
+            Assert.AreEqual("1.2.3.4", ep.Address.ToString());
+            Assert.AreEqual(12345, ep.Port);
         }
 
         [TestMethod]
