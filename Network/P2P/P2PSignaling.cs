@@ -14,6 +14,8 @@ namespace VibeDesk.Network.P2P
         public string DeviceId { get; set; } = string.Empty;
         public string PublicIp { get; set; } = string.Empty;
         public int PublicPort { get; set; }
+        public string PhysicalPublicIp { get; set; } = string.Empty;
+        public int PhysicalPublicPort { get; set; }
         public string LocalIp { get; set; } = string.Empty;
         public int LocalPort { get; set; }
     }

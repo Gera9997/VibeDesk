@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using VibeDesk.Network;
@@ -44,6 +46,18 @@ namespace VibeDesk.Tests
             Assert.IsNotNull(receivedHostInfo, "Signaling should return host endpoints");
             Assert.AreEqual(testHostId, receivedHostInfo.DeviceId);
             Assert.AreEqual("192.168.0.15", receivedHostInfo.LocalIp);
+        }
+
+        [TestMethod]
+        public async Task TestStunResolutionDiagnostic()
+        {
+            var (epDefault, msgDefault) = await StunResolver.ResolveAsync(0);
+            Assert.IsNotNull(epDefault, "Default STUN should resolve");
+            Assert.IsTrue(epDefault.Port > 0);
+
+            byte[] req = StunResolver.CreateBindingRequest();
+            Assert.AreEqual(20, req.Length);
+            Assert.AreEqual(0x01, req[1]);
         }
 
         [TestMethod]

@@ -152,7 +152,7 @@ namespace VibeDesk.Network
             OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
         }
 
-        public bool Start(int targetFps = 60, int jpegQuality = 60, float scale = 0.85f)
+        public bool Start(int targetFps = 60, int jpegQuality = 60, float scale = 0.85f, string bindIp = "")
         {
             if (_isRunning) return true;
 
@@ -167,7 +167,13 @@ namespace VibeDesk.Network
                 return false;
             }
 
-            if (!_netServer.Start(Port))
+            bool bound = false;
+            if (!string.IsNullOrEmpty(bindIp) && IPAddress.TryParse(bindIp, out var localAddr) && !IPAddress.IsLoopback(localAddr))
+            {
+                bound = _netServer.Start(localAddr, IPAddress.IPv6None, Port);
+            }
+
+            if (!bound && !_netServer.Start(Port))
             {
                 OnStatusChanged?.Invoke($"Не удалось запустить сервер на порту {Port}");
                 return false;

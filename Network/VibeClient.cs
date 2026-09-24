@@ -109,18 +109,39 @@ namespace VibeDesk.Network
             };
         }
 
-        public bool Start(int preferredPort = DefaultClientPort)
+        public bool Start(int preferredPort = DefaultClientPort, string bindIp = "")
         {
             if (_netClient.IsRunning) return true;
 
-            // 1. Try dedicated client port (e.g. 15891) for symmetric firewall punch
+            IPAddress? localAddr = null;
+            if (!string.IsNullOrEmpty(bindIp) && IPAddress.TryParse(bindIp, out var parsed) && !IPAddress.IsLoopback(parsed))
+            {
+                localAddr = parsed;
+            }
+
+            // 1. Try dedicated client port on physical adapter if specified
+            if (localAddr != null)
+            {
+                if (preferredPort > 0 && _netClient.Start(localAddr, IPAddress.IPv6None, preferredPort))
+                {
+                    StartPollThread();
+                    return true;
+                }
+                if (_netClient.Start(localAddr, IPAddress.IPv6None, 0))
+                {
+                    StartPollThread();
+                    return true;
+                }
+            }
+
+            // 2. Try dedicated client port on all interfaces
             if (preferredPort > 0 && _netClient.Start(preferredPort))
             {
                 StartPollThread();
                 return true;
             }
 
-            // 2. Fallback to any OS ephemeral port
+            // 3. Fallback to any OS ephemeral port
             if (_netClient.Start())
             {
                 StartPollThread();

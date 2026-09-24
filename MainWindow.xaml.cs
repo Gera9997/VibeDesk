@@ -27,6 +27,7 @@ namespace VibeDesk
         private UpdateInfo? _latestUpdateInfo;
 
         private IPEndPoint? _myPublicEndPoint;
+        private IPEndPoint? _physicalPublicEndPoint;
         private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
         private int _targetFps = 60;
@@ -181,19 +182,51 @@ namespace VibeDesk
             TxtPublicEndpoint.Text = "STUN поиск...";
             AppendLog("🔍 Запрос STUN (определение внешнего IP и порта)...");
 
+            // 1. Resolve through physical network interface (bypasses VPN/proxy tunnels)
+            var (physEp, physMsg) = await StunResolver.ResolveAsync(0, _myLocalIp);
+            _physicalPublicEndPoint = physEp;
+
+            // 2. Resolve through default route
             var (ep, msg) = await StunResolver.ResolveAsync(_host.Port);
             _myPublicEndPoint = ep;
 
-            if (_myPublicEndPoint != null)
+            var primaryEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
+            if (primaryEp != null)
             {
-                TxtPublicEndpoint.Text = $"{_myPublicEndPoint.Address}:{_myPublicEndPoint.Port}";
-                AppendLog($"✅ {msg}");
+                TxtPublicEndpoint.Text = $"{primaryEp.Address}:{primaryEp.Port}";
+                AppendLog($"✅ {(_physicalPublicEndPoint != null ? physMsg : msg)}");
+                if (_physicalPublicEndPoint != null && _myPublicEndPoint != null && !_physicalPublicEndPoint.Address.Equals(_myPublicEndPoint.Address))
+                {
+                    AppendLog($"🛡️ Обнаружен VPN/прокси: физ. адрес {_physicalPublicEndPoint.Address}, туннель {_myPublicEndPoint.Address}");
+                }
             }
             else
             {
                 TxtPublicEndpoint.Text = "Локальный режим";
                 AppendLog($"⚠️ {msg}");
             }
+        }
+
+        private void TryOpenUpnpPort(int port)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var natType = Type.GetTypeFromProgID("HNetCfg.NATUPnP");
+                    if (natType != null)
+                    {
+                        dynamic nat = Activator.CreateInstance(natType)!;
+                        dynamic mappings = nat.StaticPortMappingCollection;
+                        if (mappings != null)
+                        {
+                            mappings.Add(port, "UDP", port, _myLocalIp, true, "VibeDesk");
+                            Dispatcher.InvokeAsync(() => AppendLog($"⚡ [UPnP] Порт {port} (UDP) открыт на домашнем роутере!"));
+                        }
+                    }
+                }
+                catch { }
+            });
         }
 
         private void StartLocalHost()
@@ -209,9 +242,10 @@ namespace VibeDesk
                 });
             };
 
-            bool started = _host.Start(_targetFps, jpegQuality: 70, scale: _targetScale);
+            bool started = _host.Start(_targetFps, jpegQuality: 70, scale: _targetScale, bindIp: _myLocalIp);
             if (started)
             {
+                TryOpenUpnpPort(_host.Port);
                 TxtCaptureEngine.Text = $"{_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)";
                 TxtHostStatus.Text = "Ожидание подключения...";
                 AppendLog($"⚡ Хост слушает UDP порт {_host.Port}. Захват: {_host.ActiveCaptureEngine} ({(int)(_targetScale * 100)}% / {_targetFps} FPS)");
@@ -273,10 +307,20 @@ namespace VibeDesk
 
                 // Host punches UDP packets continuously for 8 seconds towards client to keep router NAT pinholes open!
                 var punchTargets = new List<IPEndPoint>();
+                if (IPAddress.TryParse(clientReq.PhysicalPublicIp, out var clientPhysIp) && clientReq.PhysicalPublicPort > 0)
+                {
+                    punchTargets.Add(new IPEndPoint(clientPhysIp, clientReq.PhysicalPublicPort));
+                }
                 if (IPAddress.TryParse(clientReq.PublicIp, out var clientPubIp))
                 {
-                    if (clientReq.PublicPort > 0) punchTargets.Add(new IPEndPoint(clientPubIp, clientReq.PublicPort));
-                    if (VibeClient.DefaultClientPort != clientReq.PublicPort) punchTargets.Add(new IPEndPoint(clientPubIp, VibeClient.DefaultClientPort));
+                    if (clientReq.PublicPort > 0 && (clientPhysIp == null || !clientPubIp.Equals(clientPhysIp) || clientReq.PublicPort != clientReq.PhysicalPublicPort))
+                    {
+                        punchTargets.Add(new IPEndPoint(clientPubIp, clientReq.PublicPort));
+                    }
+                    if (VibeClient.DefaultClientPort != clientReq.PublicPort)
+                    {
+                        punchTargets.Add(new IPEndPoint(clientPubIp, VibeClient.DefaultClientPort));
+                    }
                 }
                 if (IPAddress.TryParse(clientReq.LocalIp, out var clientLocIp) && clientReq.LocalPort > 0)
                 {
@@ -303,6 +347,8 @@ namespace VibeDesk
                     DeviceId = _myDeviceId,
                     PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
                     PublicPort = _myPublicEndPoint?.Port ?? 0,
+                    PhysicalPublicIp = _physicalPublicEndPoint?.Address.ToString() ?? "",
+                    PhysicalPublicPort = _physicalPublicEndPoint?.Port ?? _host.Port,
                     LocalIp = _myLocalIp,
                     LocalPort = _host.Port
                 };
@@ -334,9 +380,9 @@ namespace VibeDesk
                 {
                     AppendLog($"🔎 Поиск хоста {FormatId(target)} в локальной сети (LAN) и через глобальные серверы...");
 
-                    // 0. Start dedicated client socket
+                    // 0. Start dedicated client socket bound to physical adapter
                     var client = new VibeClient();
-                    client.Start(VibeClient.DefaultClientPort);
+                    client.Start(VibeClient.DefaultClientPort, bindIp: _myLocalIp);
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
                     client.OnPunchReceived += ep =>
                     {
@@ -351,8 +397,8 @@ namespace VibeDesk
                     // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network, bound to real physical adapter)
                     var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, _myLocalIp, timeoutMs: 1500);
 
-                    // 2. Concurrently resolve STUN on client's actual socket port!
-                    var clientStunTask = StunResolver.ResolveAsync(clientLocalPort);
+                    // 2. Concurrently resolve STUN on client's physical network adapter (port 0 = non-conflicting ephemeral socket)
+                    var clientStunTask = StunResolver.ResolveAsync(0, _myLocalIp);
 
                     // Check LAN Discovery first (instant 1-20ms in local Wi-Fi)
                     var lanEp = await lanDiscoveryTask;
@@ -384,13 +430,15 @@ namespace VibeDesk
                     // 3. Prepare global signaling with real client socket public port!
                     var (clientStunEp, _) = await clientStunTask;
                     int clientPubPort = clientStunEp?.Port ?? clientLocalPort;
-                    string clientPubIp = clientStunEp?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? "");
+                    string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
 
                     var myInfo = new PeerEndpointInfo
                     {
                         DeviceId = _myDeviceId,
                         PublicIp = clientPubIp,
                         PublicPort = clientPubPort,
+                        PhysicalPublicIp = clientPubIp,
+                        PhysicalPublicPort = clientPubPort,
                         LocalIp = _myLocalIp,
                         LocalPort = clientLocalPort
                     };
@@ -410,6 +458,10 @@ namespace VibeDesk
 
                     AppendLog($"📥 Ответ от хоста {FormatId(target)} получен!");
                     AppendLog($"   -> Локальный IP хоста: {hostInfo.LocalIp}:{hostInfo.LocalPort}");
+                    if (!string.IsNullOrEmpty(hostInfo.PhysicalPublicIp))
+                    {
+                        AppendLog($"   -> Физический IP хоста: {hostInfo.PhysicalPublicIp}:{hostInfo.PhysicalPublicPort}");
+                    }
                     AppendLog($"   -> Внешний IP хоста: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
 
                     bool isLocal = IsDirectLanAccessible(hostInfo);
@@ -431,27 +483,56 @@ namespace VibeDesk
                     {
                         AppendLog($"🌐 Хост находится в другой сети (Интернет). Запуск P2P пробития NAT...");
 
-                        // 1. Priority A (Internet): P2P via STUN port
-                        string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
-                        if (!string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0)
+                        // 1. Priority A1 (Physical Public Endpoint - bypasses host's VPN completely!)
+                        if (!connected && !string.IsNullOrEmpty(hostInfo.PhysicalPublicIp) && hostInfo.PhysicalPublicPort > 0)
                         {
-                            lastTriedEp = hostPublicEp;
-                            AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
-                            connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
-                            if (connected) AppendLog($"⚡ Успешно подключено по P2P через Интернет к {hostPublicEp}!");
+                            string hostPhysEp = $"{hostInfo.PhysicalPublicIp}:{hostInfo.PhysicalPublicPort}";
+                            lastTriedEp = hostPhysEp;
+                            AppendLog($"🌐 Проверка прямого физического канала к {hostPhysEp}...");
+                            connected = await TryConnectAsync(client, hostInfo.PhysicalPublicIp, hostInfo.PhysicalPublicPort, timeoutMs: 5000);
+                            if (connected) AppendLog($"⚡ Успешно подключено по прямому физическому каналу к {hostPhysEp}!");
                         }
 
-                        // 2. Priority B (Internet): P2P via default port 15890 (if router preserved port)
-                        string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
-                        if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
+                        // 2. Priority A2 (Physical Public IP on port 15890 - UPnP / default port)
+                        if (!connected && !string.IsNullOrEmpty(hostInfo.PhysicalPublicIp))
                         {
-                            lastTriedEp = hostDefaultEp;
-                            AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
-                            connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
-                            if (connected) AppendLog($"⚡ Успешно подключено к {hostDefaultEp}!");
+                            string hostPhysDefEp = $"{hostInfo.PhysicalPublicIp}:{VibeHost.DefaultPort}";
+                            if (hostPhysDefEp != lastTriedEp)
+                            {
+                                lastTriedEp = hostPhysDefEp;
+                                AppendLog($"🌐 Проверка прямого порта на физическом IP {hostPhysDefEp}...");
+                                connected = await TryConnectAsync(client, hostInfo.PhysicalPublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
+                                if (connected) AppendLog($"⚡ Успешно подключено к {hostPhysDefEp}!");
+                            }
                         }
 
-                        // 3. Priority C (Internet): Incoming UDP Punch address (only if valid public IP)
+                        // 3. Priority B1 (Standard Public IP via STUN)
+                        if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0)
+                        {
+                            string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
+                            if (hostPublicEp != lastTriedEp)
+                            {
+                                lastTriedEp = hostPublicEp;
+                                AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
+                                connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
+                                if (connected) AppendLog($"⚡ Успешно подключено по P2P через Интернет к {hostPublicEp}!");
+                            }
+                        }
+
+                        // 4. Priority B2 (Standard Public IP on port 15890)
+                        if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp))
+                        {
+                            string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
+                            if (hostDefaultEp != lastTriedEp)
+                            {
+                                lastTriedEp = hostDefaultEp;
+                                AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
+                                connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
+                                if (connected) AppendLog($"⚡ Успешно подключено к {hostDefaultEp}!");
+                            }
+                        }
+
+                        // 5. Priority C (Incoming UDP Punch address)
                         if (!connected && _lastPunchReceivedFrom != null && !IsPrivateIp(_lastPunchReceivedFrom.Address))
                         {
                             string punchEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
