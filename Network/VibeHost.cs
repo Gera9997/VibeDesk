@@ -239,14 +239,26 @@ namespace VibeDesk.Network
                             (long)((nowTicks - _lastFrameSentTicks) * 1000.0 / Stopwatch.Frequency);
 
                         bool allowSend = true;
-                        if (inFlight >= 1 && msSinceLastSend < 40)
+                        bool forceKeyframe = framesThisSecond == 0;
+
+                        if (inFlight >= 1)
                         {
-                            allowSend = false;
+                            if (msSinceLastSend < 40)
+                            {
+                                allowSend = false;
+                            }
+                            else
+                            {
+                                // Timeout: client ACK was dropped or network dropped frame.
+                                // Reset in-flight state and send fresh keyframe.
+                                _lastClientAckedFrameId = _lastSentFrameId;
+                                forceKeyframe = true;
+                            }
                         }
 
                         if (allowSend)
                         {
-                            byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: framesThisSecond == 0);
+                            byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: forceKeyframe);
                             if (frameData != null && frameData.Length > 0)
                             {
                                 uint frameId = unchecked(++_frameCounter);

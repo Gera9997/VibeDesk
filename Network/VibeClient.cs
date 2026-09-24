@@ -94,6 +94,10 @@ namespace VibeDesk.Network
             _listener.PeerDisconnectedEvent += (peer, info) =>
             {
                 _serverPeer = null;
+                if (_suppressDisconnectEvent || info.Reason == DisconnectReason.DisconnectPeerCalled)
+                {
+                    return;
+                }
                 OnStatusChanged?.Invoke($"Отключено от хоста: {info.Reason}");
                 OnDisconnected?.Invoke();
             };
@@ -140,6 +144,26 @@ namespace VibeDesk.Network
             _pollThread.Start();
         }
 
+        private volatile bool _suppressDisconnectEvent = false;
+
+        public void ResetPeer()
+        {
+            if (_serverPeer != null)
+            {
+                _suppressDisconnectEvent = true;
+                try
+                {
+                    _serverPeer.Disconnect();
+                    _serverPeer = null;
+                }
+                catch { }
+                finally
+                {
+                    _suppressDisconnectEvent = false;
+                }
+            }
+        }
+
         public bool Connect(string host, int port)
         {
             if (!_netClient.IsRunning)
@@ -150,10 +174,7 @@ namespace VibeDesk.Network
                 }
             }
 
-            if (_serverPeer != null && _serverPeer.ConnectionState != ConnectionState.Disconnected)
-            {
-                _serverPeer.Disconnect();
-            }
+            ResetPeer();
 
             StartPollThread();
 

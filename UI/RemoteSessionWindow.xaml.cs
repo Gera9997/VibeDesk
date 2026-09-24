@@ -27,6 +27,15 @@ namespace VibeDesk.UI
             _client.OnDisconnected += OnDisconnected;
             _client.OnClipboardReceived += OnClipboardReceived;
 
+            _renderRunning = true;
+            _renderThread = new Thread(RenderLoop)
+            {
+                IsBackground = true,
+                Name = "VibeDesk_DecodeLoop",
+                Priority = ThreadPriority.AboveNormal
+            };
+            _renderThread.Start();
+
             _statsTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(500)
@@ -36,62 +45,96 @@ namespace VibeDesk.UI
 
             Closed += (s, e) =>
             {
+                _renderRunning = false;
+                _frameSignal.Set();
                 _statsTimer.Stop();
                 _client.OnFrameReceived -= OnFrameReceived;
                 _client.OnDisconnected -= OnDisconnected;
                 _client.OnClipboardReceived -= OnClipboardReceived;
                 _client.Disconnect();
+                _renderThread?.Join(200);
             };
         }
 
+        private readonly object _frameLock = new object();
+        private byte[]? _latestJpegBytes;
+        private readonly AutoResetEvent _frameSignal = new AutoResetEvent(false);
+        private Thread? _renderThread;
+        private volatile bool _renderRunning = true;
         private volatile BitmapSource? _latestPendingFrame;
         private int _isRendering = 0;
 
         private void OnFrameReceived(byte[] jpegBytes)
         {
-            try
+            // Non-blocking atomic frame deposit:
+            // If the decoder is currently busy, any previous unrendered frame is instantly dropped!
+            lock (_frameLock)
             {
-                var bitmap = new BitmapImage();
-                using (var ms = new MemoryStream(jpegBytes))
+                _latestJpegBytes = jpegBytes;
+            }
+            _frameSignal.Set();
+        }
+
+        private void RenderLoop()
+        {
+            while (_renderRunning)
+            {
+                _frameSignal.WaitOne(100);
+                if (!_renderRunning) break;
+
+                byte[]? bytesToDecode = null;
+                lock (_frameLock)
                 {
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = ms;
-                    bitmap.EndInit();
-                    bitmap.Freeze(); // Enables cross-thread access and high performance
+                    bytesToDecode = _latestJpegBytes;
+                    _latestJpegBytes = null; // consumed!
                 }
 
-                _latestPendingFrame = bitmap;
+                if (bytesToDecode == null) continue;
 
-                if (System.Threading.Interlocked.CompareExchange(ref _isRendering, 1, 0) == 0)
+                try
+                {
+                    var bitmap = new BitmapImage();
+                    using (var ms = new MemoryStream(bytesToDecode))
+                    {
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = ms;
+                        bitmap.EndInit();
+                        bitmap.Freeze(); // Enables cross-thread access and high performance
+                    }
+
+                    _latestPendingFrame = bitmap;
+
+                    if (System.Threading.Interlocked.CompareExchange(ref _isRendering, 1, 0) == 0)
+                    {
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            try
+                            {
+                                var frame = _latestPendingFrame;
+                                if (frame != null)
+                                {
+                                    ImgScreen.Source = frame;
+                                    if (OverlayConnecting.Visibility == Visibility.Visible)
+                                    {
+                                        OverlayConnecting.Visibility = Visibility.Collapsed;
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                System.Threading.Interlocked.Exchange(ref _isRendering, 0);
+                            }
+                        }, DispatcherPriority.Render);
+                    }
+                }
+                catch (Exception ex)
                 {
                     Dispatcher.InvokeAsync(() =>
                     {
-                        try
-                        {
-                            var frame = _latestPendingFrame;
-                            if (frame != null)
-                            {
-                                ImgScreen.Source = frame;
-                                if (OverlayConnecting.Visibility == Visibility.Visible)
-                                {
-                                    OverlayConnecting.Visibility = Visibility.Collapsed;
-                                }
-                            }
-                        }
-                        finally
-                        {
-                            System.Threading.Interlocked.Exchange(ref _isRendering, 0);
-                        }
-                    }, DispatcherPriority.Render);
+                        TxtConnectingStatus.Text = $"Ошибка распаковки кадра: {ex.Message}";
+                    });
                 }
-            }
-            catch (Exception ex)
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    TxtConnectingStatus.Text = $"Ошибка распаковки кадра: {ex.Message}";
-                });
             }
         }
 

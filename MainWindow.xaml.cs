@@ -321,6 +321,7 @@ namespace VibeDesk
             }
 
             BtnConnect.IsEnabled = false;
+            _lastPunchReceivedFrom = null;
             AppendLog($"\n--- Запуск подключения к: {target} ---");
 
             try
@@ -339,7 +340,10 @@ namespace VibeDesk
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
                     client.OnPunchReceived += ep =>
                     {
-                        _lastPunchReceivedFrom = ep;
+                        if (!IsPrivateIp(ep.Address))
+                        {
+                            _lastPunchReceivedFrom = ep;
+                        }
                     };
 
                     int clientLocalPort = client.LocalPort;
@@ -347,17 +351,8 @@ namespace VibeDesk
                     // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network, bound to real physical adapter)
                     var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, _myLocalIp, timeoutMs: 1500);
 
-                    // 2. Concurrently prepare global signaling with real client socket port!
-                    var myInfo = new PeerEndpointInfo
-                    {
-                        DeviceId = _myDeviceId,
-                        PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
-                        PublicPort = _myPublicEndPoint?.Port ?? 0,
-                        LocalIp = _myLocalIp,
-                        LocalPort = clientLocalPort
-                    };
-
-                    var signalingTask = _signaling.RequestHostEndpointsAsync(target, myInfo, timeoutMs: 7000);
+                    // 2. Concurrently resolve STUN on client's actual socket port!
+                    var clientStunTask = StunResolver.ResolveAsync(clientLocalPort);
 
                     // Check LAN Discovery first (instant 1-20ms in local Wi-Fi)
                     var lanEp = await lanDiscoveryTask;
@@ -365,7 +360,7 @@ namespace VibeDesk
                     {
                         AppendLog($"🛋️ Хост {FormatId(target)} обнаружен в домашней сети: {lanEp}! Мгновенное подключение...");
 
-                        bool lanConnected = await TryConnectAsync(client, lanEp.Address.ToString(), lanEp.Port, timeoutMs: 4000);
+                        bool lanConnected = await TryConnectAsync(client, lanEp.Address.ToString(), lanEp.Port, timeoutMs: 3500);
                         if (lanConnected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по локальной сети к {lanEp}!");
@@ -379,8 +374,6 @@ namespace VibeDesk
                         else
                         {
                             AppendLog($"⚠️ Хост ответил на бродкаст {lanEp}, но соединение не завершилось. Переход к глобальной сети...");
-                            client.Disconnect();
-                            client.Start(VibeClient.DefaultClientPort);
                         }
                     }
                     else
@@ -388,8 +381,22 @@ namespace VibeDesk
                         AppendLog("📡 В домашней сети хост не ответил на бродкаст, ожидание глобального сервера...");
                     }
 
-                    AppendLog($"📤 Отправка запроса хосту через глобальную сеть...");
-                    var hostInfo = await signalingTask;
+                    // 3. Prepare global signaling with real client socket public port!
+                    var (clientStunEp, _) = await clientStunTask;
+                    int clientPubPort = clientStunEp?.Port ?? clientLocalPort;
+                    string clientPubIp = clientStunEp?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? "");
+
+                    var myInfo = new PeerEndpointInfo
+                    {
+                        DeviceId = _myDeviceId,
+                        PublicIp = clientPubIp,
+                        PublicPort = clientPubPort,
+                        LocalIp = _myLocalIp,
+                        LocalPort = clientLocalPort
+                    };
+
+                    AppendLog($"📤 Запрос хосту через глобальную сеть (клиентский сокет: {clientPubIp}:{clientPubPort})...");
+                    var hostInfo = await _signaling.RequestHostEndpointsAsync(target, myInfo, timeoutMs: 7000);
 
                     if (hostInfo == null)
                     {
@@ -405,13 +412,13 @@ namespace VibeDesk
                     AppendLog($"   -> Локальный IP хоста: {hostInfo.LocalIp}:{hostInfo.LocalPort}");
                     AppendLog($"   -> Внешний IP хоста: {hostInfo.PublicIp}:{hostInfo.PublicPort}");
 
+                    bool isLocal = IsDirectLanAccessible(hostInfo);
                     bool connected = false;
                     string lastTriedEp = "";
 
-                    // 1. Priority A: If on genuine local LAN (same router / physical LAN discovery), connect directly via LAN!
-                    string hostLanEp = $"{hostInfo.LocalIp}:{hostInfo.LocalPort}";
-                    if (IsDirectLanAccessible(hostInfo))
+                    if (isLocal)
                     {
+                        string hostLanEp = $"{hostInfo.LocalIp}:{hostInfo.LocalPort}";
                         lastTriedEp = hostLanEp;
                         AppendLog($"🛋️ Обнаружена общая домашняя сеть! Мгновенное подключение к {hostLanEp}...");
                         connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 3500);
@@ -423,46 +430,38 @@ namespace VibeDesk
                     else
                     {
                         AppendLog($"🌐 Хост находится в другой сети (Интернет). Запуск P2P пробития NAT...");
-                    }
 
-                    // 2. Priority B: If we received an incoming UDP punch packet directly from the host
-                    if (!connected && _lastPunchReceivedFrom != null && !IPAddress.IsLoopback(_lastPunchReceivedFrom.Address))
-                    {
-                        lastTriedEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
-                        AppendLog($"🎯 Обнаружен живой адрес пира по входящему UDP Punch: {lastTriedEp}! Подключение...");
-                        connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 4000);
-                        if (connected)
+                        // 1. Priority A (Internet): P2P via STUN port
+                        string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
+                        if (!string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0)
                         {
-                            AppendLog($"⚡ Успешно подключено по прямому каналу {lastTriedEp}!");
+                            lastTriedEp = hostPublicEp;
+                            AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
+                            connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
+                            if (connected) AppendLog($"⚡ Успешно подключено по P2P через Интернет к {hostPublicEp}!");
                         }
-                    }
 
-                    // 3. Priority C: Internet P2P via STUN port
-                    string hostPublicEp = $"{hostInfo.PublicIp}:{hostInfo.PublicPort}";
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostInfo.PublicPort > 0 && hostPublicEp != lastTriedEp)
-                    {
-                        lastTriedEp = hostPublicEp;
-                        AppendLog($"🌐 Проверка P2P через Интернет к {hostPublicEp}...");
-                        connected = await TryConnectAsync(client, hostInfo.PublicIp, hostInfo.PublicPort, timeoutMs: 5000);
-                    }
-
-                    // 4. Priority D: Try Internet P2P via default port 15890 (if router did 1:1 mapping)
-                    string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
-                    {
-                        AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
-                        connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
-                    }
-
-                    // 5. Priority E: Test Direct LAN as fallback if not tried yet (e.g. offline isolated switch)
-                    if (!connected && !string.IsNullOrEmpty(hostInfo.LocalIp) && hostInfo.LocalIp != "127.0.0.1" && hostLanEp != lastTriedEp)
-                    {
-                        lastTriedEp = hostLanEp;
-                        AppendLog($"🛋️ Резервная проверка LAN-подключения к {hostLanEp}...");
-                        connected = await TryConnectAsync(client, hostInfo.LocalIp, hostInfo.LocalPort, timeoutMs: 3000);
-                        if (connected)
+                        // 2. Priority B (Internet): P2P via default port 15890 (if router preserved port)
+                        string hostDefaultEp = $"{hostInfo.PublicIp}:{VibeHost.DefaultPort}";
+                        if (!connected && !string.IsNullOrEmpty(hostInfo.PublicIp) && hostDefaultEp != lastTriedEp)
                         {
-                            AppendLog($"⚡ Успешно подключено напрямую по локальной сети!");
+                            lastTriedEp = hostDefaultEp;
+                            AppendLog($"🌐 Проверка прямого порта к {hostDefaultEp}...");
+                            connected = await TryConnectAsync(client, hostInfo.PublicIp, VibeHost.DefaultPort, timeoutMs: 4000);
+                            if (connected) AppendLog($"⚡ Успешно подключено к {hostDefaultEp}!");
+                        }
+
+                        // 3. Priority C (Internet): Incoming UDP Punch address (only if valid public IP)
+                        if (!connected && _lastPunchReceivedFrom != null && !IsPrivateIp(_lastPunchReceivedFrom.Address))
+                        {
+                            string punchEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
+                            if (punchEp != lastTriedEp)
+                            {
+                                lastTriedEp = punchEp;
+                                AppendLog($"🎯 Подключение по входящему UDP Punch: {punchEp}...");
+                                connected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 4000);
+                                if (connected) AppendLog($"⚡ Успешно подключено по встречному UDP-каналу {punchEp}!");
+                            }
                         }
                     }
 
@@ -553,6 +552,9 @@ namespace VibeDesk
 
         private async Task<bool> TryConnectAsync(VibeClient client, string ip, int port, int timeoutMs)
         {
+            client.ResetPeer();
+            await Task.Delay(30);
+
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Action onConn = () => tcs.TrySetResult(true);
             Action onDis = () => tcs.TrySetResult(false);
@@ -618,6 +620,17 @@ namespace VibeDesk
             }
         }
 
+        private static bool IsPrivateIp(IPAddress ip)
+        {
+            if (IPAddress.IsLoopback(ip)) return true;
+            byte[] bytes = ip.GetAddressBytes();
+            if (bytes.Length != 4) return false;
+            if (bytes[0] == 10) return true;
+            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+            if (bytes[0] == 192 && bytes[1] == 168) return true;
+            return false;
+        }
+
         private bool IsDirectLanAccessible(PeerEndpointInfo hostInfo)
         {
             if (string.IsNullOrEmpty(hostInfo.LocalIp) || hostInfo.LocalIp == "127.0.0.1") return false;
@@ -632,7 +645,7 @@ namespace VibeDesk
                 }
             }
 
-            // 3. Otherwise verify private subnet matching
+            // 2. Otherwise verify private subnet matching
             return IsSameSubnet(_myLocalIp, hostInfo.LocalIp);
         }
 
