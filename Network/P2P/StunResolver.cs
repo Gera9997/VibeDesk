@@ -15,22 +15,14 @@ namespace VibeDesk.Network.P2P
             ("stun.cloudflare.com", 3478)
         };
 
-        public static async Task<IPEndPoint?> QueryAsync(UdpClient udp, string stunHost, int stunPort, int timeoutMs = 1500)
+        public static async Task<IPEndPoint?> QueryAsync(UdpClient udp, string stunHost, int stunPort, int timeoutMs = 2000)
         {
+            using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
             try
             {
                 byte[] request = CreateBindingRequest();
                 await udp.SendAsync(request, request.Length, stunHost, stunPort);
-
-                using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
-                var receiveTask = udp.ReceiveAsync();
-                var completedTask = await Task.WhenAny(receiveTask, Task.Delay(timeoutMs, cts.Token));
-                if (completedTask != receiveTask)
-                {
-                    return null;
-                }
-
-                var result = receiveTask.Result;
+                var result = await udp.ReceiveAsync(cts.Token);
                 return ParseResponse(result.Buffer);
             }
             catch
@@ -53,14 +45,28 @@ namespace VibeDesk.Network.P2P
                 probe.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                 if (localPort > 0 || !bindAddr.Equals(IPAddress.Any))
                 {
-                    probe.Client.Bind(new IPEndPoint(bindAddr, localPort));
+                    try
+                    {
+                        probe.Client.Bind(new IPEndPoint(bindAddr, localPort));
+                    }
+                    catch
+                    {
+                        // Fallback to binding to any interface on this port
+                        if (localPort > 0) probe.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+                    }
                 }
 
-                // 1. Query Google STUN
-                var googleEp = await QueryAsync(probe, "stun.l.google.com", 19302, timeoutMs: 1500);
+                // 1. Query Cloudflare STUN first (highly reliable on standard port 3478, rarely blocked)
+                var cfEp = await QueryAsync(probe, "stun.cloudflare.com", 3478, timeoutMs: 2000);
 
-                // 2. From the SAME socket, query Cloudflare STUN to detect Symmetric NAT
-                var cfEp = await QueryAsync(probe, "stun.cloudflare.com", 3478, timeoutMs: 1500);
+                // 2. Query Google STUN
+                var googleEp = await QueryAsync(probe, "stun.l.google.com", 19302, timeoutMs: 2000);
+
+                // 3. If both failed, try fallback stun1.l.google.com
+                if (cfEp == null && googleEp == null)
+                {
+                    googleEp = await QueryAsync(probe, "stun1.l.google.com", 19302, timeoutMs: 2000);
+                }
 
                 bool isSymmetric = false;
                 if (googleEp != null && cfEp != null)
@@ -68,7 +74,7 @@ namespace VibeDesk.Network.P2P
                     isSymmetric = googleEp.Port != cfEp.Port;
                 }
 
-                var primary = googleEp ?? cfEp;
+                var primary = cfEp ?? googleEp;
                 if (primary != null)
                 {
                     string natType = isSymmetric ? "Symmetric NAT (порт меняется)" : "Cone/EIM NAT (порт постоянный)";
@@ -81,6 +87,31 @@ namespace VibeDesk.Network.P2P
             }
 
             return (null, false, "STUN серверы не ответили (возможно, UDP блокируется провайдером)");
+        }
+
+        public static async Task<IPAddress?> GetPublicIpHttpAsync(int timeoutMs = 2500)
+        {
+            string[] services = new[]
+            {
+                "https://api.ipify.org",
+                "https://icanhazip.com",
+                "https://checkip.amazonaws.com"
+            };
+
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
+            foreach (var url in services)
+            {
+                try
+                {
+                    string res = (await http.GetStringAsync(url)).Trim();
+                    if (IPAddress.TryParse(res, out var parsed))
+                    {
+                        return parsed;
+                    }
+                }
+                catch { }
+            }
+            return null;
         }
 
         public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0, string localIp = "")

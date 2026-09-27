@@ -198,6 +198,21 @@ namespace VibeDesk
             _myPublicEndPoint = ep ?? _physicalPublicEndPoint;
 
             var primaryEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
+
+            // If STUN failed completely, fallback to HTTP service to determine external IP
+            if (primaryEp == null)
+            {
+                AppendLog("🔍 Резервное определение внешнего IP через веб-сервис...");
+                var httpIp = await StunResolver.GetPublicIpHttpAsync(2500);
+                if (httpIp != null)
+                {
+                    primaryEp = new IPEndPoint(httpIp, _host.Port);
+                    _physicalPublicEndPoint = primaryEp;
+                    _myPublicEndPoint = primaryEp;
+                    physMsg = $"Внешний IP: {primaryEp.Address}:{primaryEp.Port} [Определен через Web HTTP]";
+                }
+            }
+
             if (primaryEp != null)
             {
                 TxtPublicEndpoint.Text = $"{primaryEp.Address}:{primaryEp.Port}";
@@ -303,7 +318,7 @@ namespace VibeDesk
                 Dispatcher.InvokeAsync(() => AppendLog($"[Signaling] {log}"));
             };
 
-            await _signaling.RegisterHostAsync(_myDeviceId, clientReq =>
+            await _signaling.RegisterHostAsync(_myDeviceId, async clientReq =>
             {
                 _ = Dispatcher.InvokeAsync(() =>
                 {
@@ -349,18 +364,35 @@ namespace VibeDesk
 
                 _ = Dispatcher.InvokeAsync(() => AppendLog($"🥊 [Хост] Запущен непрерывный встречный UDP-punch по адресам клиента ({punchTargets.Count} эндпоинтов)..."));
 
+                var bestPubEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
+                string pubIpStr = bestPubEp?.Address.ToString() ?? "";
+                int pubPort = bestPubEp?.Port ?? _host.Port;
+
+                if (string.IsNullOrEmpty(pubIpStr))
+                {
+                    try
+                    {
+                        var httpIp = await StunResolver.GetPublicIpHttpAsync(2000);
+                        if (httpIp != null)
+                        {
+                            pubIpStr = httpIp.ToString();
+                        }
+                    }
+                    catch { }
+                }
+
                 var responseInfo = new PeerEndpointInfo
                 {
                     DeviceId = _myDeviceId,
-                    PublicIp = _myPublicEndPoint?.Address.ToString() ?? "",
-                    PublicPort = _myPublicEndPoint?.Port ?? 0,
-                    PhysicalPublicIp = _physicalPublicEndPoint?.Address.ToString() ?? "",
-                    PhysicalPublicPort = _physicalPublicEndPoint?.Port ?? _host.Port,
+                    PublicIp = pubIpStr,
+                    PublicPort = pubPort > 0 ? pubPort : _host.Port,
+                    PhysicalPublicIp = pubIpStr,
+                    PhysicalPublicPort = pubPort > 0 ? pubPort : _host.Port,
                     LocalIp = _myLocalIp,
                     LocalPort = _host.Port
                 };
 
-                return Task.FromResult(responseInfo);
+                return responseInfo;
             });
         }
 
@@ -405,7 +437,16 @@ namespace VibeDesk
 
                     int clientLocalPort = client.LocalPort;
                     string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
-                    int clientPubPort = clientStunEp?.Port ?? clientLocalPort;
+                    int clientPubPort = clientStunEp?.Port ?? (clientLocalPort > 0 ? clientLocalPort : VibeClient.DefaultClientPort);
+
+                    if (string.IsNullOrEmpty(clientPubIp))
+                    {
+                        var httpIp = await StunResolver.GetPublicIpHttpAsync(2000);
+                        if (httpIp != null)
+                        {
+                            clientPubIp = httpIp.ToString();
+                        }
+                    }
 
                     // 1. Concurrent FAST LAN Discovery (UDP Broadcast on home network, bound to real physical adapter)
                     var lanDiscoveryTask = LanDiscovery.DiscoverHostAsync(target, _myLocalIp, timeoutMs: 1500);
@@ -476,6 +517,10 @@ namespace VibeDesk
                         clientPunchTargets.Add(new IPEndPoint(clientPhysTarget, hostInfo.PhysicalPublicPort));
                     if (IPAddress.TryParse(hostInfo.PublicIp, out var clientPubTarget) && hostInfo.PublicPort > 0)
                         clientPunchTargets.Add(new IPEndPoint(clientPubTarget, hostInfo.PublicPort));
+                    if (clientPubTarget != null && hostInfo.PublicPort != VibeHost.DefaultPort)
+                        clientPunchTargets.Add(new IPEndPoint(clientPubTarget, VibeHost.DefaultPort));
+                    if (clientPhysTarget != null && hostInfo.PhysicalPublicPort != VibeHost.DefaultPort)
+                        clientPunchTargets.Add(new IPEndPoint(clientPhysTarget, VibeHost.DefaultPort));
                     if (IPAddress.TryParse(hostInfo.LocalIp, out var clientLocTarget) && hostInfo.LocalPort > 0)
                         clientPunchTargets.Add(new IPEndPoint(clientLocTarget, hostInfo.LocalPort));
 

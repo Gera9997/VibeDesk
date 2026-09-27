@@ -244,7 +244,7 @@ namespace VibeDesk.Network
 
             Task.Run(async () =>
             {
-                byte[] punch = Encoding.UTF8.GetBytes("VIBE_PUNCH");
+                byte[] punch = PacketBuilder.CreatePunch("");
                 for (int i = 0; i < 4; i++)
                 {
                     try
