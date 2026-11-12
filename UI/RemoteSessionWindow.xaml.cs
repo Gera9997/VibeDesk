@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using VibeDesk.Capture;
 using VibeDesk.Input;
 using VibeDesk.Network;
 
@@ -17,6 +21,29 @@ namespace VibeDesk.UI
         private bool _isFullscreen = false;
         private WindowStyle _previousStyle = WindowStyle.SingleBorderWindow;
         private WindowState _previousState = WindowState.Normal;
+
+        // Хранит только самый последний полученный пакет для каждой из 8 полос
+        private readonly byte[]?[] _latestStripBytes = new byte[]?[ScreenCaptureManager.StripCount];
+        private readonly AutoResetEvent _frameSignal = new AutoResetEvent(false);
+        private readonly Thread? _renderThread;
+        private volatile bool _renderRunning = true;
+
+        private WriteableBitmap? _canvasBitmap;
+        private int _canvasW = 0;
+        private int _canvasH = 0;
+
+        private struct DecodedStrip
+        {
+            public int StripIndex;
+            public int TotalStrips;
+            public int Width;
+            public int Height;
+            public int Stride;
+            public byte[] Pixels;
+        }
+
+        private readonly ConcurrentQueue<DecodedStrip> _decodedQueue = new();
+        private int _uiUpdateScheduled = 0;
 
         public RemoteSessionWindow(VibeClient client)
         {
@@ -56,88 +83,125 @@ namespace VibeDesk.UI
             };
         }
 
-        private readonly object _frameLock = new object();
-        private byte[]? _latestJpegBytes;
-        private readonly AutoResetEvent _frameSignal = new AutoResetEvent(false);
-        private Thread? _renderThread;
-        private volatile bool _renderRunning = true;
-        private volatile BitmapSource? _latestPendingFrame;
-        private int _isRendering = 0;
-
-        private void OnFrameReceived(byte[] jpegBytes)
+        private void OnFrameReceived(byte[] payload)
         {
-            // Non-blocking atomic frame deposit:
-            // If the decoder is currently busy, any previous unrendered frame is instantly dropped!
-            lock (_frameLock)
+            if (payload == null || payload.Length < 4) return;
+
+            if (payload[0] < 32 && payload[1] == ScreenCaptureManager.StripCount && payload[2] == 0xFF && payload[3] == 0xD8)
             {
-                _latestJpegBytes = jpegBytes;
+                int stripIdx = payload[0];
+                Interlocked.Exchange(ref _latestStripBytes[stripIdx], payload);
+                _frameSignal.Set();
             }
-            _frameSignal.Set();
         }
 
         private void RenderLoop()
         {
-            using var decodeStream = new MemoryStream(1024 * 512);
+            using var decodeStream = new MemoryStream(1024 * 256);
 
             while (_renderRunning)
             {
-                _frameSignal.WaitOne(100);
+                _frameSignal.WaitOne(50);
                 if (!_renderRunning) break;
 
-                byte[]? bytesToDecode = null;
-                lock (_frameLock)
+                bool decodedAny = false;
+
+                for (int s = 0; s < ScreenCaptureManager.StripCount; s++)
                 {
-                    bytesToDecode = _latestJpegBytes;
-                    _latestJpegBytes = null; // consumed!
+                    byte[]? stripPayload = Interlocked.Exchange(ref _latestStripBytes[s], null);
+                    if (stripPayload == null) continue;
+
+                    try
+                    {
+                        int stripIdx = stripPayload[0];
+                        int totalStrips = stripPayload[1];
+
+                        decodeStream.Position = 0;
+                        decodeStream.SetLength(0);
+                        decodeStream.Write(stripPayload, 2, stripPayload.Length - 2);
+                        decodeStream.Position = 0;
+
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.StreamSource = decodeStream;
+                        bmp.EndInit();
+                        bmp.Freeze();
+
+                        var converted = new FormatConvertedBitmap(bmp, PixelFormats.Bgr32, null, 0);
+                        converted.Freeze();
+                        int w = converted.PixelWidth;
+                        int h = converted.PixelHeight;
+                        int stride = w * 4;
+                        byte[] pixels = new byte[stride * h];
+                        converted.CopyPixels(pixels, stride, 0);
+
+                        // Защита от накопления очереди в случае подвисания окна
+                        while (_decodedQueue.Count > 16)
+                        {
+                            _decodedQueue.TryDequeue(out _);
+                        }
+
+                        _decodedQueue.Enqueue(new DecodedStrip
+                        {
+                            StripIndex = stripIdx,
+                            TotalStrips = totalStrips,
+                            Width = w,
+                            Height = h,
+                            Stride = stride,
+                            Pixels = pixels
+                        });
+                        decodedAny = true;
+                    }
+                    catch { }
                 }
 
-                if (bytesToDecode == null) continue;
-
-                try
+                if (decodedAny && Interlocked.CompareExchange(ref _uiUpdateScheduled, 1, 0) == 0)
                 {
-                    decodeStream.Position = 0;
-                    decodeStream.SetLength(0);
-                    decodeStream.Write(bytesToDecode, 0, bytesToDecode.Length);
-                    decodeStream.Position = 0;
+                    Dispatcher.InvokeAsync(ApplyDecodedStripsToUi, DispatcherPriority.Render);
+                }
+            }
+        }
 
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = decodeStream;
-                    bitmap.EndInit();
-                    bitmap.Freeze(); // Enables cross-thread access and high performance
+        private void ApplyDecodedStripsToUi()
+        {
+            try
+            {
+                while (_decodedQueue.TryDequeue(out var strip))
+                {
+                    int fullW = strip.Width;
+                    int fullH = strip.Height * strip.TotalStrips;
 
-                    _latestPendingFrame = bitmap;
-
-                    if (System.Threading.Interlocked.CompareExchange(ref _isRendering, 1, 0) == 0)
+                    if (_canvasBitmap == null || _canvasW != fullW || _canvasH != fullH)
                     {
-                        Dispatcher.InvokeAsync(() =>
-                        {
-                            try
-                            {
-                                var frame = _latestPendingFrame;
-                                if (frame != null)
-                                {
-                                    ImgScreen.Source = frame;
-                                    if (OverlayConnecting.Visibility == Visibility.Visible)
-                                    {
-                                        OverlayConnecting.Visibility = Visibility.Collapsed;
-                                    }
-                                }
-                            }
-                            finally
-                            {
-                                System.Threading.Interlocked.Exchange(ref _isRendering, 0);
-                            }
-                        }, DispatcherPriority.Render);
+                        _canvasW = fullW;
+                        _canvasH = fullH;
+                        _canvasBitmap = new WriteableBitmap(fullW, fullH, 96, 96, PixelFormats.Bgr32, null);
+                        ImgScreen.Source = _canvasBitmap;
+                    }
+
+                    int destY = strip.StripIndex * strip.Height;
+                    if (destY + strip.Height <= _canvasH)
+                    {
+                        _canvasBitmap.WritePixels(
+                            new Int32Rect(0, destY, strip.Width, strip.Height),
+                            strip.Pixels,
+                            strip.Stride,
+                            0);
                     }
                 }
-                catch (Exception ex)
+
+                if (OverlayConnecting.Visibility == Visibility.Visible && _canvasBitmap != null)
                 {
-                    Dispatcher.InvokeAsync(() =>
-                    {
-                        TxtConnectingStatus.Text = $"Ошибка распаковки кадра: {ex.Message}";
-                    });
+                    OverlayConnecting.Visibility = Visibility.Collapsed;
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _uiUpdateScheduled, 0);
+                if (!_decodedQueue.IsEmpty && Interlocked.CompareExchange(ref _uiUpdateScheduled, 1, 0) == 0)
+                {
+                    Dispatcher.InvokeAsync(ApplyDecodedStripsToUi, DispatcherPriority.Render);
                 }
             }
         }
@@ -155,18 +219,14 @@ namespace VibeDesk.UI
         {
             Dispatcher.InvokeAsync(() =>
             {
-                try
-                {
-                    Clipboard.SetText(text);
-                }
-                catch { }
+                try { Clipboard.SetText(text); } catch { }
             });
         }
 
         private void UpdateStats()
         {
             if (_client == null || !_client.IsConnected) return;
-            TxtStats.Text = $"FPS: {_client.CurrentFps} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кб/с";
+            TxtStats.Text = $"Полос/c: {_client.CurrentFps} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кбит/с";
         }
 
         private (double normX, double normY)? GetNormalizedCoordinates(MouseEventArgs e)
@@ -191,7 +251,6 @@ namespace VibeDesk.UI
         private void ImgScreen_MouseDown(object sender, MouseButtonEventArgs e)
         {
             ImgScreen.Focus();
-
             VibeMouseButton? btn = e.ChangedButton switch
             {
                 MouseButton.Left => VibeMouseButton.Left,
@@ -199,7 +258,6 @@ namespace VibeDesk.UI
                 MouseButton.Middle => VibeMouseButton.Middle,
                 _ => null
             };
-
             if (btn.HasValue)
             {
                 _client.SendMouseButton(btn.Value, true);
@@ -216,7 +274,6 @@ namespace VibeDesk.UI
                 MouseButton.Middle => VibeMouseButton.Middle,
                 _ => null
             };
-
             if (btn.HasValue)
             {
                 _client.SendMouseButton(btn.Value, false);
@@ -238,7 +295,6 @@ namespace VibeDesk.UI
                 e.Handled = true;
                 return;
             }
-
             int vk = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
             if (vk > 0)
             {
@@ -257,24 +313,19 @@ namespace VibeDesk.UI
             }
         }
 
-        private void BtnFullscreen_Click(object sender, RoutedEventArgs e)
-        {
-            ToggleFullscreen();
-        }
+        private void BtnFullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
 
         private void CmbLiveMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CmbLiveMode == null || _client == null || !_client.IsConnected) return;
-
             (float scale, int fps, int quality) = CmbLiveMode.SelectedIndex switch
             {
-                0 => (1.0f, 60, 75),   // 100% Четкость
-                1 => (0.75f, 60, 70),  // 75% Баланс
-                2 => (0.50f, 60, 60),  // 50% Турбо FPS
-                3 => (0.33f, 30, 50),  // 33% Эконом
-                _ => (1.0f, 60, 70)
+                0 => (1.0f, 60, 75),
+                1 => (0.75f, 60, 65),
+                2 => (0.50f, 60, 55),
+                3 => (0.33f, 30, 45),
+                _ => (0.75f, 60, 65)
             };
-
             _client.SendStreamSettings(scale, fps, quality);
         }
 
@@ -302,23 +353,17 @@ namespace VibeDesk.UI
             {
                 if (Clipboard.ContainsText())
                 {
-                    string text = Clipboard.GetText();
-                    _client.SendClipboard(text);
-                    MessageBox.Show(this, "Буфер обмена успешно передан на удаленный компьютер.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                    _client.SendClipboard(Clipboard.GetText());
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Ошибка доступа к буферу: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            catch { }
         }
 
         private void BtnTaskMgr_Click(object sender, RoutedEventArgs e)
         {
-            // Send Ctrl+Shift+Esc
-            _client.SendKey(0x11, true); // VK_CONTROL
-            _client.SendKey(0x10, true); // VK_SHIFT
-            _client.SendKey(0x1B, true); // VK_ESCAPE
+            _client.SendKey(0x11, true);
+            _client.SendKey(0x10, true);
+            _client.SendKey(0x1B, true);
             _client.SendKey(0x1B, false);
             _client.SendKey(0x10, false);
             _client.SendKey(0x11, false);
@@ -326,14 +371,10 @@ namespace VibeDesk.UI
 
         private void BtnWinKey_Click(object sender, RoutedEventArgs e)
         {
-            // Send Windows Key (VK_LWIN = 0x5B)
             _client.SendKey(0x5B, true);
             _client.SendKey(0x5B, false);
         }
 
-        private void BtnDisconnect_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
+        private void BtnDisconnect_Click(object sender, RoutedEventArgs e) => Close();
     }
 }

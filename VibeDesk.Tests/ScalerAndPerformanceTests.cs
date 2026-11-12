@@ -133,6 +133,84 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
+        public void TestDirtyStripsEncodingAndHeaderValidation()
+        {
+            Assert.AreEqual(8, ScreenCaptureManager.StripCount);
+            using var manager = new ScreenCaptureManager(jpegQuality: 50, scale: 0.5f);
+            var strips = manager.CaptureDirtyStrips(forceAll: true);
+
+            if (strips != null)
+            {
+                Assert.AreEqual(ScreenCaptureManager.StripCount, strips.Count, "ForceAll should capture all 8 strips");
+                for (int i = 0; i < strips.Count; i++)
+                {
+                    byte[] s = strips[i];
+                    Assert.IsTrue(s.Length > 4, "Strip payload must be non-empty");
+                    Assert.AreEqual((byte)i, s[0], $"Strip index mismatch at {i}");
+                    Assert.AreEqual((byte)ScreenCaptureManager.StripCount, s[1], "Strip count must be 8");
+                    Assert.AreEqual((byte)0xFF, s[2], "JPEG SOI marker byte 1");
+                    Assert.AreEqual((byte)0xD8, s[3], "JPEG SOI marker byte 2");
+                }
+
+                // Subsequent capture without changes should only capture the single healing sweep strip
+                var secondStrips = manager.CaptureDirtyStrips(forceAll: false);
+                Assert.IsNotNull(secondStrips);
+                Assert.IsTrue(secondStrips.Count <= 2, $"Expected at most 2 dirty strips on static screen, got {secondStrips.Count}");
+            }
+        }
+
+        [TestMethod]
+        public void TestFrameReassemblerStripOutOfOrderAssembly()
+        {
+            var reassembler = new FrameReassembler();
+            int completedStrips = 0;
+            var reassembledStrips = new System.Collections.Generic.Dictionary<uint, byte[]>();
+
+            reassembler.OnFrameReadyWithId += (id, data) =>
+            {
+                completedStrips++;
+                reassembledStrips[id] = data;
+            };
+
+            // 8 strips, 2 chunks each
+            var chunkList = new System.Collections.Generic.List<byte[]>();
+            for (uint stripId = 1; stripId <= 8; stripId++)
+            {
+                byte[] payload = new byte[1500];
+                for (int b = 0; b < payload.Length; b++) payload[b] = (byte)((stripId * 10 + b) % 256);
+
+                byte[] c0 = PacketBuilder.CreateFrameChunk(stripId, 0, 2, payload, 0, 1000);
+                byte[] c1 = PacketBuilder.CreateFrameChunk(stripId, 1, 2, payload, 1000, 500);
+
+                chunkList.Add(c0);
+                chunkList.Add(c1);
+            }
+
+            // Shuffle chunks to simulate random UDP packet arrival order
+            var rnd = new Random(42);
+            for (int i = chunkList.Count - 1; i > 0; i--)
+            {
+                int swapIdx = rnd.Next(i + 1);
+                (chunkList[i], chunkList[swapIdx]) = (chunkList[swapIdx], chunkList[i]);
+            }
+
+            foreach (var chunk in chunkList)
+            {
+                reassembler.ProcessChunk(chunk);
+            }
+
+            Assert.AreEqual(8, completedStrips, "All 8 strips should be successfully reassembled");
+            Assert.AreEqual(8, reassembledStrips.Count);
+
+            for (uint stripId = 1; stripId <= 8; stripId++)
+            {
+                Assert.IsTrue(reassembledStrips.ContainsKey(stripId), $"Strip {stripId} must be present");
+                Assert.AreEqual(1500, reassembledStrips[stripId].Length);
+                Assert.AreEqual((byte)((stripId * 10) % 256), reassembledStrips[stripId][0]);
+            }
+        }
+
+        [TestMethod]
         public void TestMouseNormalizationInvariance()
         {
             // Verify that clicking at 50% of the screen produces (0.5, 0.5) regardless of whether

@@ -45,6 +45,26 @@ namespace VibeDesk.Network
 
         public NetManager RawNetManager => _netClient;
         public int LocalPort => _netClient.LocalPort;
+        public IPEndPoint? DiscoveredStunEndPoint { get; private set; }
+
+        public async Task<IPEndPoint?> QueryStunOverActiveSocketAsync(int timeoutMs = 1500)
+        {
+            if (!_netClient.IsRunning)
+            {
+                Start();
+            }
+
+            DiscoveredStunEndPoint = null;
+            await VibeDesk.Network.P2P.StunResolver.SendStunQueriesViaNetManagerAsync(RawNetManager);
+
+            var sw = Stopwatch.StartNew();
+            while (DiscoveredStunEndPoint == null && sw.ElapsedMilliseconds < timeoutMs)
+            {
+                RawNetManager.PollEvents();
+                await Task.Delay(15);
+            }
+            return DiscoveredStunEndPoint;
+        }
 
         public VibeClient()
         {
@@ -63,7 +83,15 @@ namespace VibeDesk.Network
             {
                 try
                 {
-                    if (point.Port == 19302 || point.Port == 3478) return;
+                    if (point.Port == 19302 || point.Port == 3478)
+                    {
+                        var ep = VibeDesk.Network.P2P.StunResolver.ParseResponse(reader.GetRemainingBytes());
+                        if (ep != null)
+                        {
+                            DiscoveredStunEndPoint = ep;
+                        }
+                        return;
+                    }
 
                     if (reader.AvailableBytes >= 1)
                     {
@@ -242,19 +270,7 @@ namespace VibeDesk.Network
                 if (!Start()) return;
             }
 
-            Task.Run(async () =>
-            {
-                byte[] punch = PacketBuilder.CreatePunch("");
-                for (int i = 0; i < 4; i++)
-                {
-                    try
-                    {
-                        _netClient.SendUnconnectedMessage(punch, target);
-                    }
-                    catch { }
-                    await Task.Delay(25);
-                }
-            });
+            Punch(target);
         }
 
         public void Disconnect()
@@ -407,6 +423,11 @@ namespace VibeDesk.Network
             {
                 byte[] packet = PacketBuilder.CreatePunch(deviceId);
                 _netClient.SendUnconnectedMessage(packet, target);
+                if (target.Port > 1024 && target.Port < 65530)
+                {
+                    _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, target.Port + 1));
+                    _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, target.Port - 1));
+                }
             }
             catch { }
         }

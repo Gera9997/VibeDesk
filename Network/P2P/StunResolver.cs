@@ -120,6 +120,30 @@ namespace VibeDesk.Network.P2P
             return (ep, msg);
         }
 
+        public static async Task SendStunQueriesViaNetManagerAsync(LiteNetLib.NetManager netManager)
+        {
+            if (netManager == null || !netManager.IsRunning) return;
+            byte[] req = CreateBindingRequest();
+
+            try
+            {
+                var cf = await Dns.GetHostAddressesAsync("stun.cloudflare.com");
+                var cfIp = System.Linq.Enumerable.FirstOrDefault(cf, a => a.AddressFamily == AddressFamily.InterNetwork);
+                if (cfIp != null)
+                    netManager.SendUnconnectedMessage(req, new IPEndPoint(cfIp, 3478));
+            }
+            catch { }
+
+            try
+            {
+                var gg = await Dns.GetHostAddressesAsync("stun.l.google.com");
+                var ggIp = System.Linq.Enumerable.FirstOrDefault(gg, a => a.AddressFamily == AddressFamily.InterNetwork);
+                if (ggIp != null)
+                    netManager.SendUnconnectedMessage(req, new IPEndPoint(ggIp, 19302));
+            }
+            catch { }
+        }
+
         public static byte[] CreateBindingRequest()
         {
             byte[] request = new byte[20];

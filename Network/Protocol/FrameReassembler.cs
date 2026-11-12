@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 
 namespace VibeDesk.Network.Protocol
 {
@@ -27,9 +26,9 @@ namespace VibeDesk.Network.Protocol
             }
         }
 
-        private const int MaxActiveSlots = 16;
+        private const int MaxActiveSlots = 32;
         private readonly FrameSlot[] _slots = new FrameSlot[MaxActiveSlots];
-        private uint _lastCompletedFrameId = 0;
+        private uint _highestFrameId = 0;
 
         public event Action<byte[]>? OnFrameReady;
         public event Action<uint, byte[]>? OnFrameReadyWithId;
@@ -53,13 +52,17 @@ namespace VibeDesk.Network.Protocol
 
             if (data.Length < 11 + payloadLength || totalChunks == 0 || chunkIndex >= totalChunks) return;
 
-            // Discard frames that are older than our last displayed frame
-            if (frameId < _lastCompletedFrameId && (_lastCompletedFrameId - frameId) < 500)
+            // Отбрасываем устаревшие пакеты (старше 16 полос / 2 кадров)
+            if (_highestFrameId > 16 && frameId < _highestFrameId - 16)
             {
                 return;
             }
 
-            // Find existing slot for this frameId
+            if (frameId > _highestFrameId)
+            {
+                _highestFrameId = frameId;
+            }
+
             FrameSlot? slot = null;
             int freeIndex = -1;
             long oldestTicks = long.MaxValue;
@@ -85,7 +88,6 @@ namespace VibeDesk.Network.Protocol
                 }
             }
 
-            // Allocate slot if new frame
             if (slot == null)
             {
                 int targetIndex = freeIndex != -1 ? freeIndex : oldestIndex;
@@ -100,7 +102,6 @@ namespace VibeDesk.Network.Protocol
 
             slot.LastActivityTicks = Stopwatch.GetTimestamp();
 
-            // Store chunk if not already present
             if (slot.Chunks != null && slot.Chunks[chunkIndex] == null)
             {
                 byte[] chunkBytes = new byte[payloadLength];
@@ -109,7 +110,6 @@ namespace VibeDesk.Network.Protocol
                 slot.ChunkSizes![chunkIndex] = payloadLength;
                 slot.ReceivedCount++;
 
-                // Check if all chunks for this frame have arrived
                 if (slot.ReceivedCount == slot.TotalChunks)
                 {
                     int totalSize = 0;
@@ -129,13 +129,12 @@ namespace VibeDesk.Network.Protocol
                         }
                     }
 
-                    _lastCompletedFrameId = frameId;
                     slot.Reset();
 
-                    // Discard any older incomplete frames to prevent stale backlog
+                    // Очищаем только явно устаревшие слоты (отставшие более чем на 16 полос)
                     for (int j = 0; j < MaxActiveSlots; j++)
                     {
-                        if (_slots[j].IsActive && _slots[j].FrameId < frameId)
+                        if (_slots[j].IsActive && _highestFrameId > 16 && _slots[j].FrameId < _highestFrameId - 16)
                         {
                             _slots[j].Reset();
                         }

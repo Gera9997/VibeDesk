@@ -51,6 +51,21 @@ namespace VibeDesk.Network
         public int MaxBitrateKbps { get => _maxBitrateKbps; set => _maxBitrateKbps = Math.Clamp(value, 500, 50000); }
 
         public NetManager RawNetManager => _netServer;
+        public IPEndPoint? DiscoveredStunEndPoint { get; private set; }
+
+        public async Task<IPEndPoint?> QueryStunOverActiveSocketAsync(int timeoutMs = 1500)
+        {
+            DiscoveredStunEndPoint = null;
+            await VibeDesk.Network.P2P.StunResolver.SendStunQueriesViaNetManagerAsync(RawNetManager);
+
+            var sw = Stopwatch.StartNew();
+            while (DiscoveredStunEndPoint == null && sw.ElapsedMilliseconds < timeoutMs)
+            {
+                RawNetManager.PollEvents();
+                await Task.Delay(15);
+            }
+            return DiscoveredStunEndPoint;
+        }
 
         public VibeHost(int port = DefaultPort)
         {
@@ -70,7 +85,15 @@ namespace VibeDesk.Network
             {
                 try
                 {
-                    if (point.Port == 19302 || point.Port == 3478) return;
+                    if (point.Port == 19302 || point.Port == 3478)
+                    {
+                        var ep = VibeDesk.Network.P2P.StunResolver.ParseResponse(reader.GetRemainingBytes());
+                        if (ep != null)
+                        {
+                            DiscoveredStunEndPoint = ep;
+                        }
+                        return;
+                    }
 
                     if (reader.AvailableBytes >= 1)
                     {
@@ -265,16 +288,11 @@ namespace VibeDesk.Network
                         fpsStopwatch.Restart();
                     }
 
-                    // NAT Keepalive: every 10 seconds send keepalive to keep NAT pinhole open on router
-                    if (_connectedPeer == null && fpsStopwatch.ElapsedMilliseconds - lastKeepaliveMs >= 10000)
+                    // NAT Keepalive: каждые 15 секунд отправляем реальный STUN-запрос, чтобы роутер держал внешний порт открытым!
+                    if (_connectedPeer == null && fpsStopwatch.ElapsedMilliseconds - lastKeepaliveMs >= 15000)
                     {
                         lastKeepaliveMs = fpsStopwatch.ElapsedMilliseconds;
-                        try
-                        {
-                            byte[] pingPkt = PacketBuilder.CreatePing(Stopwatch.GetTimestamp());
-                            _netServer.SendUnconnectedMessage(pingPkt, new IPEndPoint(IPAddress.Parse("8.8.8.8"), 19302));
-                        }
-                        catch { }
+                        _ = VibeDesk.Network.P2P.StunResolver.SendStunQueriesViaNetManagerAsync(_netServer);
                     }
 
                     var peer = _connectedPeer;
@@ -286,26 +304,21 @@ namespace VibeDesk.Network
                             (long)((nowTicks - _lastFrameSentTicks) * 1000.0 / Stopwatch.Frequency);
 
                         bool allowSend = true;
-                        bool forceKeyframe = framesThisSecond == 0;
+                        bool forceKeyframe = (framesThisSecond == 0 && msSinceLastSend > 1000);
 
-                        // Non-blocking sliding window:
-                        // Allow up to 3 frames in-flight without freezing the capture thread!
-                        if (inFlight > 3)
+                        // Не блокируем поток на 180 мс! Если ACK от полос задержался более чем на 55 мс — сбрасываем счетчик и шлем актуальные данные
+                        if (inFlight > 8)
                         {
-                            if (msSinceLastSend > 180)
+                            if (msSinceLastSend > 55)
                             {
-                                // Timeout: previous ACKs or frames were lost in network. Reset window and resume.
                                 _lastClientAckedFrameId = _lastSentFrameId;
-                                forceKeyframe = true;
                             }
                             else
                             {
-                                // Network/client buffer is full: skip this frame gracefully to avoid bufferbloat
                                 allowSend = false;
                             }
                         }
 
-                        // Strict bitrate cap enforcement (e.g. 3500 Kbps = ~448 KB/s)
                         long maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
                         if (bytesSentThisSecond >= maxBytesPerSec && framesThisSecond > 1)
                         {
@@ -314,32 +327,29 @@ namespace VibeDesk.Network
 
                         if (allowSend)
                         {
-                            byte[]? frameData = _captureManager.CaptureAndEncode(forceFrame: forceKeyframe);
-                            if (frameData != null && frameData.Length > 0)
+                            var strips = _captureManager.CaptureDirtyStrips(forceAll: forceKeyframe);
+                            if (strips != null && strips.Count > 0)
                             {
-                                uint frameId = unchecked(++_frameCounter);
-                                _lastSentFrameId = frameId;
-                                _lastFrameSentTicks = nowTicks;
-
-                                int totalLength = frameData.Length;
-                                int chunkSize = PacketBuilder.MaxChunkPayloadSize;
-                                ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
-
-                                for (ushort i = 0; i < totalChunks; i++)
+                                foreach (var stripData in strips)
                                 {
                                     if (peer.ConnectionState != ConnectionState.Connected) break;
-                                    int offset = i * chunkSize;
-                                    int length = Math.Min(chunkSize, totalLength - offset);
-                                    byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, frameData, offset, length);
 
-                                    peer.Send(chunkPacket, DeliveryMethod.Unreliable);
-                                    bytesSentThisSecond += chunkPacket.Length;
+                                    uint stripFrameId = unchecked(++_frameCounter);
+                                    _lastSentFrameId = stripFrameId;
+                                    _lastFrameSentTicks = nowTicks;
 
-                                    // Micro-pacing: every 4 chunks (~4.8 KB), flush and micro-pause to prevent router buffer spikes
-                                    if ((i + 1) % 4 == 0 && i + 1 < totalChunks)
+                                    int totalLength = stripData.Length;
+                                    int chunkSize = PacketBuilder.MaxChunkPayloadSize;
+                                    ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+
+                                    for (ushort i = 0; i < totalChunks; i++)
                                     {
-                                        _netServer.TriggerUpdate();
-                                        Thread.SpinWait(2000);
+                                        int offset = i * chunkSize;
+                                        int length = Math.Min(chunkSize, totalLength - offset);
+                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(stripFrameId, i, totalChunks, stripData, offset, length);
+
+                                        peer.Send(chunkPacket, DeliveryMethod.Unreliable);
+                                        bytesSentThisSecond += chunkPacket.Length;
                                     }
                                 }
 
@@ -485,19 +495,19 @@ namespace VibeDesk.Network
         {
             if (!_netServer.IsRunning) return;
 
-            Task.Run(async () =>
+            try
             {
                 byte[] punch = PacketBuilder.CreatePunch(DeviceId);
-                for (int i = 0; i < 4; i++)
+                _netServer.SendUnconnectedMessage(punch, target);
+
+                // Дополнительно пробиваем соседние порты (+1 / -1) на случай сдвига порта роутером
+                if (target.Port > 1024 && target.Port < 65530)
                 {
-                    try
-                    {
-                        _netServer.SendUnconnectedMessage(punch, target);
-                    }
-                    catch { }
-                    await Task.Delay(30);
+                    _netServer.SendUnconnectedMessage(punch, new IPEndPoint(target.Address, target.Port + 1));
+                    _netServer.SendUnconnectedMessage(punch, new IPEndPoint(target.Address, target.Port - 1));
                 }
-            });
+            }
+            catch { }
         }
 
         public void SendClipboard(string text)

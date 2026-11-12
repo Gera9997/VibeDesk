@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -9,19 +10,20 @@ namespace VibeDesk.Capture
 {
     public class ScreenCaptureManager : IDisposable
     {
+        public const int StripCount = 8;
+
         private IScreenCapturer _capturer;
         private readonly ImageCodecInfo _jpegCodec;
         private readonly EncoderParameters _encoderParams;
-        private readonly MemoryStream _compressionStream = new(1024 * 512);
+        private readonly MemoryStream _compressionStream = new(1024 * 256);
 
-        private Bitmap? _scaledBitmap;
-        private Graphics? _scaledGraphics;
+        private Bitmap? _workBitmap;
+        private Graphics? _workGraphics;
+        private Bitmap? _stripBitmap;
+        private Graphics? _stripGraphics;
 
-        private int _lastCursorX = -1;
-        private int _lastCursorY = -1;
-        private IntPtr _lastCursorHandle = IntPtr.Zero;
-        private bool _lastCursorVisible = false;
-        private long _lastEncodedTimestampTicks = 0;
+        private readonly ulong[] _stripHashes = new ulong[StripCount];
+        private int _forceSweepIndex = 0;
 
         public float ResolutionScale { get; private set; } = 0.85f;
         public string ActiveEngineName => _capturer.Name;
@@ -35,7 +37,6 @@ namespace VibeDesk.Capture
             _encoderParams = new EncoderParameters(1);
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(jpegQuality, 10, 100));
 
-            // Attempt DXGI first, fallback to GDI
             var dxgi = new DxgiScreenCapture();
             if (dxgi.Initialize())
             {
@@ -57,20 +58,28 @@ namespace VibeDesk.Capture
 
         public void SetScale(float scale)
         {
-            ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
+            float clamped = Math.Clamp(scale, 0.25f, 1.0f);
+            if (Math.Abs(clamped - ResolutionScale) > 0.01f)
+            {
+                ResolutionScale = clamped;
+                Array.Clear(_stripHashes, 0, _stripHashes.Length);
+            }
         }
 
         public void ResetForceFrame()
         {
-            _lastEncodedTimestampTicks = 0;
+            Array.Clear(_stripHashes, 0, _stripHashes.Length);
         }
 
-        public unsafe byte[]? CaptureAndEncode(bool forceFrame = false)
+        /// <summary>
+        /// Возвращает список изменившихся горизонтальных полос экрана.
+        /// Первые 2 байта каждого элемента: [0] = индекс полосы (0..7), [1] = всего полос (8), далее JPEG-поток.
+        /// </summary>
+        public unsafe List<byte[]>? CaptureDirtyStrips(bool forceAll = false)
         {
             Bitmap? bmp = _capturer.Capture();
             if (bmp == null)
             {
-                // Fallback to GDI if current capturer failed
                 if (_capturer is DxgiScreenCapture)
                 {
                     _capturer.Dispose();
@@ -79,77 +88,106 @@ namespace VibeDesk.Capture
                     _capturer = gdi;
                     bmp = _capturer.Capture();
                 }
-
                 if (bmp == null) return null;
             }
 
-            // Check cursor changes
-            bool cursorChanged = false;
+            DrawCursor(bmp);
+
+            int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
+            int targetH = Math.Max(StripCount * 8, ((int)(bmp.Height * ResolutionScale)) / StripCount * StripCount);
+            int stripH = targetH / StripCount;
+
+            if (_workBitmap == null || _workBitmap.Width != targetW || _workBitmap.Height != targetH)
+            {
+                _workGraphics?.Dispose();
+                _workBitmap?.Dispose();
+                _workBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
+                _workGraphics = Graphics.FromImage(_workBitmap);
+                _workGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                _workGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+                _workGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                _workGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                _workGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+                Array.Clear(_stripHashes, 0, _stripHashes.Length);
+            }
+
+            if (_stripBitmap == null || _stripBitmap.Width != targetW || _stripBitmap.Height != stripH)
+            {
+                _stripGraphics?.Dispose();
+                _stripBitmap?.Dispose();
+                _stripBitmap = new Bitmap(targetW, stripH, PixelFormat.Format32bppRgb);
+                _stripGraphics = Graphics.FromImage(_stripBitmap);
+                _stripGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+            }
+
+            _workGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+
+            var dirtyList = new List<byte[]>(StripCount);
+
+            // Фоновое исцеление (Healing Sweep): 1 полоса в каждом кадре обновляется принудительно
+            int sweepStrip = _forceSweepIndex;
+            _forceSweepIndex = (_forceSweepIndex + 1) % StripCount;
+
+            BitmapData fullData = _workBitmap.LockBits(new Rectangle(0, 0, targetW, targetH), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+            bool[] isStripDirty = new bool[StripCount];
+
             try
             {
-                var ci = new Win32.CURSORINFO { cbSize = Marshal.SizeOf<Win32.CURSORINFO>() };
-                if (Win32.GetCursorInfo(out ci))
+                byte* basePtr = (byte*)fullData.Scan0;
+                int stride = fullData.Stride;
+
+                for (int s = 0; s < StripCount; s++)
                 {
-                    bool visible = (ci.flags & Win32.CURSOR_SHOWING) != 0 && ci.hCursor != IntPtr.Zero;
-                    if (visible != _lastCursorVisible ||
-                        (visible && (ci.ptScreenPos.X != _lastCursorX || ci.ptScreenPos.Y != _lastCursorY || ci.hCursor != _lastCursorHandle)))
+                    int startY = s * stripH;
+                    ulong hash = 14695981039346656037UL;
+
+                    for (int y = startY; y < startY + stripH; y += 2)
                     {
-                        cursorChanged = true;
-                        _lastCursorX = ci.ptScreenPos.X;
-                        _lastCursorY = ci.ptScreenPos.Y;
-                        _lastCursorHandle = ci.hCursor;
-                        _lastCursorVisible = visible;
+                        uint* row = (uint*)(basePtr + y * stride);
+                        for (int x = 0; x < targetW; x += 4)
+                        {
+                            hash ^= row[x];
+                            hash *= 1099511628211UL;
+                        }
+                    }
+
+                    if (forceAll || s == sweepStrip || _stripHashes[s] != hash)
+                    {
+                        _stripHashes[s] = hash;
+                        isStripDirty[s] = true;
                     }
                 }
             }
-            catch { }
-
-            long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            long elapsedMsSinceLastEncode = _lastEncodedTimestampTicks == 0 ? long.MaxValue :
-                (long)((nowTicks - _lastEncodedTimestampTicks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
-
-            // Screen dirty checking:
-            // If screen pixels did not change, cursor did not move, not forced, and heartbeat interval (< 250ms / 4 FPS) has not elapsed:
-            // return null to completely save network bandwidth & avoid bufferbloat!
-            if (!_capturer.HasNewFrame && !cursorChanged && !forceFrame && elapsedMsSinceLastEncode < 250)
+            finally
             {
-                return null;
+                _workBitmap.UnlockBits(fullData);
             }
 
-            _lastEncodedTimestampTicks = nowTicks;
+            for (int s = 0; s < StripCount; s++)
+            {
+                if (!isStripDirty[s]) continue;
 
-            // Draw host's real cursor onto the bitmap so it's visible in remote stream
+                int startY = s * stripH;
+                _stripGraphics!.DrawImage(_workBitmap, new Rectangle(0, 0, targetW, stripH), new Rectangle(0, startY, targetW, stripH), GraphicsUnit.Pixel);
+
+                _compressionStream.SetLength(0);
+                _compressionStream.WriteByte((byte)s);
+                _compressionStream.WriteByte((byte)StripCount);
+
+                _stripBitmap.Save(_compressionStream, _jpegCodec, _encoderParams);
+                dirtyList.Add(_compressionStream.ToArray());
+            }
+
+            return dirtyList;
+        }
+
+        public byte[]? CaptureAndEncode(bool forceFrame = false)
+        {
+            Bitmap? bmp = _capturer.Capture();
+            if (bmp == null) return null;
             DrawCursor(bmp);
-
             _compressionStream.SetLength(0);
-
-            // High-speed downscaling if resolution scale is less than 1.0
-            if (ResolutionScale < 0.99f)
-            {
-                int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
-                int targetH = Math.Max(16, ((int)(bmp.Height * ResolutionScale)) / 2 * 2);
-
-                if (_scaledBitmap == null || _scaledBitmap.Width != targetW || _scaledBitmap.Height != targetH)
-                {
-                    _scaledGraphics?.Dispose();
-                    _scaledBitmap?.Dispose();
-
-                    _scaledBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
-                    _scaledGraphics = Graphics.FromImage(_scaledBitmap);
-                    _scaledGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
-                    _scaledGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-                    _scaledGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
-                    _scaledGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-                }
-
-                _scaledGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
-                _scaledBitmap!.Save(_compressionStream, _jpegCodec, _encoderParams);
-            }
-            else
-            {
-                bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
-            }
-
+            bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
             return _compressionStream.ToArray();
         }
 
@@ -180,21 +218,17 @@ namespace VibeDesk.Capture
             var codecs = ImageCodecInfo.GetImageEncoders();
             foreach (var codec in codecs)
             {
-                if (codec.FormatID == format.Guid)
-                {
-                    return codec;
-                }
+                if (codec.FormatID == format.Guid) return codec;
             }
             return codecs[0];
         }
 
         public void Dispose()
         {
-            _scaledGraphics?.Dispose();
-            _scaledGraphics = null;
-            _scaledBitmap?.Dispose();
-            _scaledBitmap = null;
-
+            _stripGraphics?.Dispose();
+            _stripBitmap?.Dispose();
+            _workGraphics?.Dispose();
+            _workBitmap?.Dispose();
             _capturer.Dispose();
             _encoderParams.Dispose();
             _compressionStream.Dispose();

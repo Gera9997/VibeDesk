@@ -69,16 +69,16 @@ namespace VibeDesk
                 FirewallHelper.AddFirewallRules(elevateIfNeed: false);
             }
 
-            // 1. Resolve STUN before starting host to discover public endpoint
-            await ResolveStunAsync();
-
-            // 2. Start local host
+            // 1. Сначала запускаем локальный хост (открывает реальный UDP-сокет LiteNetLib)
             StartLocalHost();
 
-            // 3. Register with global P2P signaling in background
+            // 2. Определяем STUN напрямую через уже открытый сокет хоста!
+            await ResolveStunAsync();
+
+            // 3. Регистрируемся в глобальном сигналинге
             _ = InitializeSignalingAsync();
 
-            // 4. Background check for updates (non-blocking)
+            // 4. Фоновая проверка обновлений
             _ = CheckForUpdatesQuietlyAsync();
         }
 
@@ -180,52 +180,32 @@ namespace VibeDesk
         private async Task ResolveStunAsync()
         {
             TxtPublicEndpoint.Text = "STUN поиск...";
-            AppendLog("🔍 Запрос STUN (определение внешнего IP и порта на порту хоста)...");
+            AppendLog("🔍 Запрос STUN напрямую через активный UDP-сокет хоста...");
 
-            // 1. Resolve through physical network interface ON THE EXACT HOST PORT
-            var (physEp, isPhysSym, physMsg) = await StunResolver.ProbeAsync(_host.Port, _myLocalIp);
-            _physicalPublicEndPoint = physEp;
-
-            // 2. Resolve through default route if needed
-            IPEndPoint? ep = null;
-            string msg = "";
-            if (_physicalPublicEndPoint == null)
+            var stunEp = await _host.QueryStunOverActiveSocketAsync(2000);
+            if (stunEp != null)
             {
-                var (defEp, isDefSym, defMsg) = await StunResolver.ProbeAsync(_host.Port);
-                ep = defEp;
-                msg = defMsg;
-            }
-            _myPublicEndPoint = ep ?? _physicalPublicEndPoint;
-
-            var primaryEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
-
-            // If STUN failed completely, fallback to HTTP service to determine external IP
-            if (primaryEp == null)
-            {
-                AppendLog("🔍 Резервное определение внешнего IP через веб-сервис...");
-                var httpIp = await StunResolver.GetPublicIpHttpAsync(2500);
-                if (httpIp != null)
-                {
-                    primaryEp = new IPEndPoint(httpIp, _host.Port);
-                    _physicalPublicEndPoint = primaryEp;
-                    _myPublicEndPoint = primaryEp;
-                    physMsg = $"Внешний IP: {primaryEp.Address}:{primaryEp.Port} [Определен через Web HTTP]";
-                }
+                _physicalPublicEndPoint = stunEp;
+                _myPublicEndPoint = stunEp;
+                TxtPublicEndpoint.Text = $"{stunEp.Address}:{stunEp.Port}";
+                AppendLog($"✅ STUN успешен (порт сокета хоста): {stunEp.Address}:{stunEp.Port}");
+                return;
             }
 
-            if (primaryEp != null)
+            AppendLog("🔍 Резервное определение внешнего IP через веб-сервис...");
+            var httpIp = await StunResolver.GetPublicIpHttpAsync(2500);
+            if (httpIp != null)
             {
-                TxtPublicEndpoint.Text = $"{primaryEp.Address}:{primaryEp.Port}";
-                AppendLog($"✅ {(_physicalPublicEndPoint != null ? physMsg : msg)}");
-                if (_physicalPublicEndPoint != null && _myPublicEndPoint != null && !_physicalPublicEndPoint.Address.Equals(_myPublicEndPoint.Address))
-                {
-                    AppendLog($"🛡️ Обнаружен VPN/прокси: физ. адрес {_physicalPublicEndPoint.Address}, туннель {_myPublicEndPoint.Address}");
-                }
+                var fallbackEp = new IPEndPoint(httpIp, _host.Port);
+                _physicalPublicEndPoint = fallbackEp;
+                _myPublicEndPoint = fallbackEp;
+                TxtPublicEndpoint.Text = $"{fallbackEp.Address}:{fallbackEp.Port}";
+                AppendLog($"✅ Внешний IP определен через HTTP: {fallbackEp}");
             }
             else
             {
                 TxtPublicEndpoint.Text = "Локальный режим";
-                AppendLog($"⚠️ {physMsg}");
+                AppendLog("⚠️ Не удалось определить внешний IP, работа в локальной сети.");
             }
         }
 
@@ -364,6 +344,13 @@ namespace VibeDesk
 
                 _ = Dispatcher.InvokeAsync(() => AppendLog($"🥊 [Хост] Запущен непрерывный встречный UDP-punch по адресам клиента ({punchTargets.Count} эндпоинтов)..."));
 
+                var freshStun = await _host.QueryStunOverActiveSocketAsync(600);
+                if (freshStun != null)
+                {
+                    _physicalPublicEndPoint = freshStun;
+                    _myPublicEndPoint = freshStun;
+                }
+
                 var bestPubEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
                 string pubIpStr = bestPubEp?.Address.ToString() ?? "";
                 int pubPort = bestPubEp?.Port ?? _host.Port;
@@ -419,21 +406,15 @@ namespace VibeDesk
                 {
                     AppendLog($"🔎 Поиск хоста {FormatId(target)} в локальной сети (LAN) и через глобальные серверы...");
 
-                    // 0. Resolve STUN ON EXACT CLIENT PORT before starting client socket!
-                    var (clientStunEp, isClientSym, clientStunMsg) = await StunResolver.ProbeAsync(VibeClient.DefaultClientPort, _myLocalIp);
-
-                    // Start dedicated client socket bound to physical adapter ON PORT 15891
+                    // 1. Сначала запускаем клиентский сокет на порту 15891
                     var client = new VibeClient();
                     client.Start(VibeClient.DefaultClientPort, bindIp: _myLocalIp);
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
-                    client.OnPunchReceived += ep =>
-                    {
-                        _lastPunchReceivedFrom = ep;
-                    };
-                    client.OnPunchAckReceived += ep =>
-                    {
-                        _lastPunchReceivedFrom = ep;
-                    };
+                    client.OnPunchReceived += ep => _lastPunchReceivedFrom = ep;
+                    client.OnPunchAckReceived += ep => _lastPunchReceivedFrom = ep;
+
+                    // 2. Узнаем реальный внешний IP:Port открытого клиентского сокета через STUN!
+                    var clientStunEp = await client.QueryStunOverActiveSocketAsync(1500);
 
                     int clientLocalPort = client.LocalPort;
                     string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
@@ -748,15 +729,29 @@ namespace VibeDesk
 
         private async Task<bool> TryConnectAsync(VibeClient client, string ip, int port, int timeoutMs)
         {
+            if (client.IsConnected) return true;
+
             client.ResetPeer();
-            await Task.Delay(30);
+            await Task.Delay(20);
 
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Action onConn = () => tcs.TrySetResult(true);
             Action onDis = () => tcs.TrySetResult(false);
 
+            // Если во время ожидания прилетел живой Punch от хоста с реального порта NAT — сразу коннектимся к нему!
+            Action<IPEndPoint> onPunch = ep =>
+            {
+                if (!client.IsConnected && (!ep.Address.ToString().Equals(ip) || ep.Port != port))
+                {
+                    ip = ep.Address.ToString();
+                    port = ep.Port;
+                    client.Connect(ep);
+                }
+            };
+
             client.OnConnected += onConn;
             client.OnDisconnected += onDis;
+            client.OnPunchAckReceived += onPunch;
 
             using var punchCts = new CancellationTokenSource();
 
@@ -772,8 +767,8 @@ namespace VibeDesk
                     {
                         while (!punchCts.Token.IsCancellationRequested && !client.IsConnected)
                         {
-                            client.PunchNat(targetEp);
-                            try { await Task.Delay(100, punchCts.Token); } catch { break; }
+                            client.Punch(targetEp, _myDeviceId);
+                            try { await Task.Delay(80, punchCts.Token); } catch { break; }
                         }
                     });
                 }
@@ -791,6 +786,7 @@ namespace VibeDesk
                 punchCts.Cancel();
                 client.OnConnected -= onConn;
                 client.OnDisconnected -= onDis;
+                client.OnPunchAckReceived -= onPunch;
             }
         }
 
