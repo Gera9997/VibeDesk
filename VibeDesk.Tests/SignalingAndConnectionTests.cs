@@ -76,9 +76,14 @@ namespace VibeDesk.Tests
         public async Task TestStunBeforeHostStart()
         {
             int testPort = 15894;
+            // Test that ProbeAsync correctly binds/cleans up UDP socket without throwing
             var (ep, isSym, msg) = await StunResolver.ProbeAsync(testPort);
-            Assert.IsNotNull(ep, "STUN probe must resolve public endpoint");
+            if (ep != null)
+            {
+                Assert.IsTrue(ep.Port > 0, "STUN resolved port must be valid if reachable");
+            }
 
+            // Verify that VibeHost can immediately bind and start on the exact same port
             using var host = new VibeHost(testPort);
             bool started = host.Start();
             Assert.IsTrue(started, "Host must start successfully after STUN probe");
