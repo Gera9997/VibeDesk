@@ -34,6 +34,7 @@ namespace VibeDesk.Network
         public event Action<string>? OnClipboardReceived;
         public event Action<IPEndPoint>? OnPunchReceived;
         public event Action<IPEndPoint>? OnPunchAckReceived;
+        public event Action<bool, int, int, int, int>? OnCursorPositionReceived;
 
         public const int DefaultClientPort = 15891;
         public bool IsConnected => _serverPeer != null && _serverPeer.ConnectionState == ConnectionState.Connected;
@@ -128,6 +129,7 @@ namespace VibeDesk.Network
             };
 
             _reassembler = new FrameReassembler();
+            _reassembler.OnPliNeeded += SendPli;
             _reassembler.OnFrameReadyWithId += (frameId, frameBytes) =>
             {
                 _framesThisSecond++;
@@ -360,6 +362,18 @@ namespace VibeDesk.Network
                         }
                     }
                     break;
+
+                case PacketType.CursorPosition:
+                    if (reader.AvailableBytes >= 9)
+                    {
+                        bool visible = reader.GetByte() == 1;
+                        short curX = reader.GetShort();
+                        short curY = reader.GetShort();
+                        short screenW = reader.GetShort();
+                        short screenH = reader.GetShort();
+                        OnCursorPositionReceived?.Invoke(visible, curX, curY, screenW, screenH);
+                    }
+                    break;
             }
         }
 
@@ -378,6 +392,14 @@ namespace VibeDesk.Network
             {
                 byte[] packet = PacketBuilder.CreateMouseButton(button, isDown);
                 _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
+        public void SendPli()
+        {
+            if (IsConnected)
+            {
+                _serverPeer!.Send(PacketBuilder.CreatePli(), DeliveryMethod.ReliableUnordered);
             }
         }
 

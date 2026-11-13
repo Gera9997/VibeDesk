@@ -107,7 +107,7 @@ namespace VibeDesk.Capture
 
             try
             {
-                var acquireResult = _deskDupl!.AcquireNextFrame(2, out _, out var desktopResource);
+                var acquireResult = _deskDupl!.AcquireNextFrame(2, out var frameInfo, out var desktopResource);
 
                 if (acquireResult.Failure)
                 {
@@ -125,6 +125,15 @@ namespace VibeDesk.Capture
                     }
                     HasNewFrame = false;
                     return null;
+                }
+
+                // Zero-change static frame check
+                if (frameInfo.TotalMetadataBufferSize == 0 && frameInfo.LastPresentTime == 0)
+                {
+                    desktopResource?.Dispose();
+                    _deskDupl.ReleaseFrame();
+                    HasNewFrame = false;
+                    return _reusableBitmap;
                 }
 
                 HasNewFrame = true;

@@ -91,7 +91,10 @@ namespace VibeDesk.Capture
                 if (bmp == null) return null;
             }
 
-            DrawCursor(bmp);
+            if (!forceAll && !_capturer.HasNewFrame)
+            {
+                return null;
+            }
 
             int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
             int targetH = Math.Max(StripCount * 8, ((int)(bmp.Height * ResolutionScale)) / StripCount * StripCount);
@@ -185,7 +188,6 @@ namespace VibeDesk.Capture
         {
             Bitmap? bmp = _capturer.Capture();
             if (bmp == null) return null;
-            DrawCursor(bmp);
             _compressionStream.SetLength(0);
             bmp.Save(_compressionStream, _jpegCodec, _encoderParams);
             return _compressionStream.ToArray();

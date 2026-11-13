@@ -32,6 +32,7 @@ namespace VibeDesk.Network.Protocol
 
         public event Action<byte[]>? OnFrameReady;
         public event Action<uint, byte[]>? OnFrameReadyWithId;
+        public event Action? OnPliNeeded;
 
         public FrameReassembler()
         {
@@ -132,12 +133,19 @@ namespace VibeDesk.Network.Protocol
                     slot.Reset();
 
                     // Очищаем только явно устаревшие слоты (отставшие более чем на 16 полос)
+                    bool droppedSlot = false;
                     for (int j = 0; j < MaxActiveSlots; j++)
                     {
                         if (_slots[j].IsActive && _highestFrameId > 16 && _slots[j].FrameId < _highestFrameId - 16)
                         {
                             _slots[j].Reset();
+                            droppedSlot = true;
                         }
+                    }
+
+                    if (droppedSlot)
+                    {
+                        OnPliNeeded?.Invoke();
                     }
 
                     OnFrameReady?.Invoke(fullFrame);

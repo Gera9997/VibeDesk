@@ -15,7 +15,9 @@ namespace VibeDesk.Network.Protocol
         StreamSettings = 7,
         FrameAck = 8,
         VibePunch = 9,
-        VibePunchAck = 10
+        VibePunchAck = 10,
+        CursorPosition = 11,
+        PictureLossIndication = 12
     }
 
     public static class PacketBuilder
@@ -147,6 +149,23 @@ namespace VibeDesk.Network.Protocol
             packet[1] = (byte)idBytes.Length;
             Buffer.BlockCopy(idBytes, 0, packet, 2, idBytes.Length);
             return packet;
+        }
+
+        public static byte[] CreateCursorPosition(bool visible, int x, int y, int screenW, int screenH)
+        {
+            byte[] packet = new byte[11];
+            packet[0] = (byte)PacketType.CursorPosition;
+            packet[1] = visible ? (byte)1 : (byte)0;
+            BitConverter.TryWriteBytes(packet.AsSpan(2, 2), (short)Math.Clamp(x, 0, short.MaxValue));
+            BitConverter.TryWriteBytes(packet.AsSpan(4, 2), (short)Math.Clamp(y, 0, short.MaxValue));
+            BitConverter.TryWriteBytes(packet.AsSpan(6, 2), (short)Math.Clamp(screenW, 0, short.MaxValue));
+            BitConverter.TryWriteBytes(packet.AsSpan(8, 2), (short)Math.Clamp(screenH, 0, short.MaxValue));
+            return packet;
+        }
+
+        public static byte[] CreatePli()
+        {
+            return new byte[] { (byte)PacketType.PictureLossIndication };
         }
     }
 }

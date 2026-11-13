@@ -33,6 +33,11 @@ namespace VibeDesk.Network
         private uint _lastSentFrameId = 0;
         private long _lastFrameSentTicks = 0;
 
+        // Hardware cursor state
+        private int _lastCursorX = -1;
+        private int _lastCursorY = -1;
+        private bool _lastCursorVisible = true;
+
         public event Action<string>? OnStatusChanged;
         public event Action<NetPeer>? OnClientConnected;
         public event Action<NetPeer>? OnClientDisconnected;
@@ -298,6 +303,29 @@ namespace VibeDesk.Network
                     var peer = _connectedPeer;
                     if (peer != null && peer.ConnectionState == ConnectionState.Connected && _captureManager != null)
                     {
+                        // Hardware Cursor: stream coordinates with 0 latency (11 bytes)
+                        try
+                        {
+                            var ci = new Win32.CURSORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32.CURSORINFO>() };
+                            if (Win32.GetCursorInfo(out ci))
+                            {
+                                bool visible = (ci.flags & Win32.CURSOR_SHOWING) != 0 && ci.hCursor != IntPtr.Zero;
+                                int curX = ci.ptScreenPos.X;
+                                int curY = ci.ptScreenPos.Y;
+
+                                if (curX != _lastCursorX || curY != _lastCursorY || visible != _lastCursorVisible)
+                                {
+                                    _lastCursorX = curX;
+                                    _lastCursorY = curY;
+                                    _lastCursorVisible = visible;
+
+                                    byte[] cursorPacket = PacketBuilder.CreateCursorPosition(visible, curX, curY, ScreenWidth, ScreenHeight);
+                                    peer.Send(cursorPacket, DeliveryMethod.Unreliable);
+                                }
+                            }
+                        }
+                        catch { }
+
                         uint inFlight = _lastSentFrameId > _lastClientAckedFrameId ? (_lastSentFrameId - _lastClientAckedFrameId) : 0;
                         long nowTicks = Stopwatch.GetTimestamp();
                         long msSinceLastSend = _lastFrameSentTicks == 0 ? 999 :
@@ -415,6 +443,11 @@ namespace VibeDesk.Network
                             _lastClientAckedFrameId = ackFrameId;
                         }
                     }
+                    break;
+
+                case PacketType.PictureLossIndication:
+                    _captureManager?.ResetForceFrame();
+                    _lastClientAckedFrameId = _lastSentFrameId;
                     break;
 
                 case PacketType.StreamSettings:

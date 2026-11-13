@@ -53,6 +53,7 @@ namespace VibeDesk.UI
             _client.OnFrameReceived += OnFrameReceived;
             _client.OnDisconnected += OnDisconnected;
             _client.OnClipboardReceived += OnClipboardReceived;
+            _client.OnCursorPositionReceived += OnCursorPositionReceived;
 
             _renderRunning = true;
             _renderThread = new Thread(RenderLoop)
@@ -78,6 +79,7 @@ namespace VibeDesk.UI
                 _client.OnFrameReceived -= OnFrameReceived;
                 _client.OnDisconnected -= OnDisconnected;
                 _client.OnClipboardReceived -= OnClipboardReceived;
+                _client.OnCursorPositionReceived -= OnCursorPositionReceived;
                 _client.Disconnect();
                 _renderThread?.Join(200);
             };
@@ -229,6 +231,25 @@ namespace VibeDesk.UI
             TxtStats.Text = $"Полос/c: {_client.CurrentFps} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кбит/с";
         }
 
+        private void OnCursorPositionReceived(bool visible, int x, int y, int screenW, int screenH)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (!visible)
+                {
+                    RemoteCursor.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                double scaleX = _canvasW > 0 && screenW > 0 ? (double)_canvasW / screenW : 1.0;
+                double scaleY = _canvasH > 0 && screenH > 0 ? (double)_canvasH / screenH : 1.0;
+
+                Canvas.SetLeft(RemoteCursor, x * scaleX);
+                Canvas.SetTop(RemoteCursor, y * scaleY);
+                RemoteCursor.Visibility = Visibility.Visible;
+            }, DispatcherPriority.Render);
+        }
+
         private (double normX, double normY)? GetNormalizedCoordinates(MouseEventArgs e)
         {
             if (ImgScreen.ActualWidth <= 0 || ImgScreen.ActualHeight <= 0) return null;
@@ -241,6 +262,11 @@ namespace VibeDesk.UI
 
         private void ImgScreen_MouseMove(object sender, MouseEventArgs e)
         {
+            if (ImgScreen.Cursor != Cursors.None)
+            {
+                ImgScreen.Cursor = Cursors.None;
+            }
+
             var coords = GetNormalizedCoordinates(e);
             if (coords.HasValue)
             {

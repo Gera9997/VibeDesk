@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,6 +21,34 @@ using VibeDesk.Update;
 
 namespace VibeDesk
 {
+    // ─── Recent connections model ───────────────────────────────────────────────
+    public class RecentConnection
+    {
+        public string DeviceId { get; set; } = "";
+        public string? Alias { get; set; }
+        public DateTime LastConnected { get; set; }
+
+        // UI helpers
+        public string FormattedId => DeviceId.Length == 6
+            ? $"{DeviceId[..3]} {DeviceId[3..]}"
+            : DeviceId;
+
+        public string DisplayName => string.IsNullOrWhiteSpace(Alias) ? FormattedId : Alias;
+
+        public string LastConnectedStr
+        {
+            get
+            {
+                var delta = DateTime.Now - LastConnected;
+                if (delta.TotalMinutes < 2) return "только что";
+                if (delta.TotalHours < 1) return $"{(int)delta.TotalMinutes} мин. назад";
+                if (delta.TotalDays < 1) return $"{(int)delta.TotalHours} ч. назад";
+                if (delta.TotalDays < 7) return $"{(int)delta.TotalDays} дн. назад";
+                return LastConnected.ToString("dd.MM.yyyy");
+            }
+        }
+    }
+
     public partial class MainWindow : Window
     {
         private readonly string _myDeviceId;
@@ -33,6 +64,12 @@ namespace VibeDesk
         private int _targetFps = 25;
         private float _targetScale = 0.75f;
 
+        // Recent connections
+        private ObservableCollection<RecentConnection> _recentConnections = new();
+        private static string RecentFilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "VibeDesk", "recent.json");
+
         public MainWindow()
         {
             InitializeComponent();
@@ -40,6 +77,8 @@ namespace VibeDesk
             TxtAppVersion.Text = AppVersion.FullTitle;
             TxtFooterVersion.Text = $"VibeDesk {AppVersion.FullTitle}";
             UpdateManager.CleanupLeftoverBackup();
+
+            LoadRecentConnections();
 
             _myDeviceId = GetOrCreateDeviceId();
             TxtMyId.Text = FormatId(_myDeviceId);
@@ -466,6 +505,7 @@ namespace VibeDesk
                         if (lanConnected)
                         {
                             AppendLog($"⚡ Успешно подключено напрямую по локальной сети к {lanEp}!");
+                            AddRecentConnection(target);
                             Dispatcher.Invoke(() =>
                             {
                                 var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
@@ -672,6 +712,7 @@ namespace VibeDesk
                         {
                             try
                             {
+                                AddRecentConnection(target);
                                 var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
                                 sessionWindow.Show();
                             }
@@ -921,6 +962,96 @@ namespace VibeDesk
                 MessageBox.Show(this, $"Ваш Vibe ID ({FormatId(_myDeviceId)}) скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch { }
+        }
+
+        // ─── Recent connections ──────────────────────────────────────────────────
+
+        private void LoadRecentConnections()
+        {
+            try
+            {
+                if (File.Exists(RecentFilePath))
+                {
+                    var json = File.ReadAllText(RecentFilePath);
+                    var list = JsonSerializer.Deserialize<List<RecentConnection>>(json);
+                    if (list != null)
+                    {
+                        _recentConnections = new ObservableCollection<RecentConnection>(
+                            list.OrderByDescending(r => r.LastConnected).Take(10));
+                    }
+                }
+            }
+            catch { }
+
+            ListRecentConnections.ItemsSource = _recentConnections;
+            RefreshRecentVisibility();
+        }
+
+        private void SaveRecentConnections()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(RecentFilePath)!);
+                var json = JsonSerializer.Serialize(_recentConnections.ToList(),
+                    new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(RecentFilePath, json);
+            }
+            catch { }
+        }
+
+        private void AddRecentConnection(string deviceId)
+        {
+            if (string.IsNullOrWhiteSpace(deviceId) || deviceId.Length != 6) return;
+
+            var existing = _recentConnections.FirstOrDefault(r => r.DeviceId == deviceId);
+            if (existing != null)
+            {
+                existing.LastConnected = DateTime.Now;
+                // Move to top
+                _recentConnections.Remove(existing);
+                _recentConnections.Insert(0, existing);
+            }
+            else
+            {
+                _recentConnections.Insert(0, new RecentConnection
+                {
+                    DeviceId = deviceId,
+                    LastConnected = DateTime.Now
+                });
+                // Keep max 10
+                while (_recentConnections.Count > 10)
+                    _recentConnections.RemoveAt(_recentConnections.Count - 1);
+            }
+
+            SaveRecentConnections();
+            RefreshRecentVisibility();
+        }
+
+        private void RefreshRecentVisibility()
+        {
+            bool hasItems = _recentConnections.Count > 0;
+            PanelRecentEmpty.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
+            ListRecentConnections.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ListRecentConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ListRecentConnections.SelectedItem is RecentConnection rc)
+            {
+                TxtRemoteAddress.Text = rc.DeviceId;
+                // Deselect so it can be re-clicked
+                ListRecentConnections.SelectedItem = null;
+            }
+        }
+
+        private void ListRecentConnections_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (ListRecentConnections.SelectedItem is RecentConnection rc)
+            {
+                TxtRemoteAddress.Text = rc.DeviceId;
+                ListRecentConnections.SelectedItem = null;
+                BtnConnect_Click(sender, e);
+            }
         }
 
         private void TxtRemoteAddress_KeyDown(object sender, KeyEventArgs e)

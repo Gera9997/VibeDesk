@@ -1,36 +1,38 @@
 <Window x:Class="VibeDesk.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="VibeDesk - Высокоскоростной Remote Desktop" Height="580" Width="840"
+        Title="VibeDesk" Height="640" Width="1020"
         WindowStartupLocation="CenterScreen"
-        Background="#0F1015"
-        Foreground="#ECEEF4"
+        Background="#191716"
+        Foreground="#F0EAE0"
         FontFamily="Segoe UI"
-        ResizeMode="CanMinimize">
+        ResizeMode="CanMinimize"
+        Icon="Assets/icon.ico">
+
     <Window.Resources>
-        <!-- Dark Card Style -->
-        <Style x:Key="CardBorder" TargetType="Border">
-            <Setter Property="Background" Value="#171922"/>
-            <Setter Property="BorderBrush" Value="#25293A"/>
+        <!-- Glass Surface Panel (eliminates nested frames, allows background wallpaper to glow through) -->
+        <Style x:Key="GlassPanel" TargetType="Border">
+            <Setter Property="Background" Value="#A61C1716"/>
+            <Setter Property="BorderBrush" Value="#405C423E"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="24"/>
-            <Setter Property="Margin" Value="10"/>
+            <Setter Property="Margin" Value="8"/>
         </Style>
 
-        <!-- Modern Action Button Style -->
+        <!-- Primary Action Button: wine #773344 with aged gold #C2A878 text -->
         <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#00C853"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="#773344"/>
+            <Setter Property="Foreground" Value="#C2A878"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="18,10"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -38,26 +40,32 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#00E676"/>
+                    <Setter Property="Background" Value="#943F53"/>
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#2A303C"/>
-                    <Setter Property="Foreground" Value="#656B7D"/>
+                    <Setter Property="Background" Value="#2D1C20"/>
+                    <Setter Property="Foreground" Value="#6A574E"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
+        <!-- Secondary Button: semi-transparent dark surface with subtle gold text -->
         <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#25293A"/>
-            <Setter Property="Foreground" Value="#D0D4E4"/>
+            <Setter Property="Background" Value="#402D2220"/>
+            <Setter Property="Foreground" Value="#C2A878"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#405C423E"/>
             <Setter Property="Padding" Value="12,6"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -65,7 +73,8 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#32384E"/>
+                    <Setter Property="Background" Value="#603D2E2B"/>
+                    <Setter Property="BorderBrush" Value="#60C2A878"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -74,240 +83,364 @@
 
         <!-- Modern Input TextBox -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
-            <Setter Property="Background" Value="#0D0E13"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#30354A"/>
+            <Setter Property="Background" Value="#8014100F"/>
+            <Setter Property="Foreground" Value="#F0EAE0"/>
+            <Setter Property="BorderBrush" Value="#505C423E"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Padding" Value="14,9"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="CaretBrush" Value="#00E5FF"/>
+            <Setter Property="CaretBrush" Value="#C2A878"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6">
+                                CornerRadius="7">
                             <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#C2A878"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Dark Styled ComboBox (prevents white-on-white text issues) -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#251E1C"/>
+            <Setter Property="Foreground" Value="#F0EAE0"/>
+            <Setter Property="BorderBrush" Value="#4A3834"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#251E1C"/>
+            <Setter Property="Foreground" Value="#F0EAE0"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+
+        <!-- Recent Connection Item -->
+        <Style x:Key="RecentItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Background" Value="#40231B19"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#305C423E"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#50773344"/>
+                                <Setter Property="BorderBrush" Value="#70773344"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#70773344"/>
+                                <Setter Property="BorderBrush" Value="#C2A878"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CleanListBox" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         </Style>
     </Window.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <!-- Background Wallpaper: clearly visible, rich aesthetic pattern -->
+        <Image Source="Assets/background.jpg" Stretch="UniformToFill" Opacity="0.55" IsHitTestVisible="False"/>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#13141B" BorderBrush="#202330" BorderThickness="0,0,0,1" Padding="24,14">
-            <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                    <TextBlock Text="⚡ VIBE" Foreground="#00E5FF" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
-                    <TextBlock Text="DESK" Foreground="#ECEEF4" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
-                    <Border Background="#25293A" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="PRO / P2P" Foreground="#00E5FF" FontSize="10" FontWeight="Bold"/>
-                    </Border>
-                    <Border Background="#1C2130" BorderBrush="#2C3550" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="TxtAppVersion" Text="v1.2.3" Foreground="#858B9E" FontSize="10" FontWeight="SemiBold"/>
-                    </Border>
-                </StackPanel>
+        <!-- Soft dark tint for contrast, letting the pattern shine through -->
+        <Rectangle Fill="#50191716" IsHitTestVisible="False"/>
 
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnFirewall" Style="{StaticResource SecondaryButton}" Content="🛡️ Брандмауэр" Padding="10,4" Margin="0,0,8,0" Click="BtnFirewall_Click" ToolTip="Разрешить входящие подключения в Брандмауэре Windows (1 клик)"/>
-                    <Button x:Name="BtnCheckUpdate" Style="{StaticResource SecondaryButton}" Content="🔄 Обновления" Padding="10,4" Margin="0,0,12,0" Click="BtnCheckUpdate_Click" ToolTip="Проверить наличие обновлений на GitHub"/>
-                    <TextBlock Text="Без ограничений и подписок" Foreground="#7A8098" FontSize="12" VerticalAlignment="Center"/>
-                </StackPanel>
-            </DockPanel>
-        </Border>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <!-- Update Notification Banner (Hidden by default) -->
-        <Border x:Name="BannerUpdate" Grid.Row="1" Visibility="Collapsed" Background="#141C2A" BorderBrush="#00E5FF" BorderThickness="1" CornerRadius="6" Margin="14,10,14,0" Padding="14,10">
-            <DockPanel LastChildFill="True">
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnApplyUpdate" Style="{StaticResource PrimaryButton}" Content="⚡ Обновить сейчас" Padding="12,5" Margin="8,0,0,0" Click="BtnApplyUpdate_Click"/>
-                    <Button x:Name="BtnManualDownload" Style="{StaticResource SecondaryButton}" Content="🌐 Скачать с сайта" Padding="10,5" Margin="8,0,0,0" Click="BtnManualDownload_Click" ToolTip="Открыть страницу загрузки релиза на GitHub в браузере"/>
-                    <Button Style="{StaticResource SecondaryButton}" Content="✕" Width="26" Height="26" Padding="0" Margin="6,0,0,0" Click="BtnCloseUpdateBanner_Click" ToolTip="Скрыть"/>
-                </StackPanel>
-
-                <StackPanel VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="🚀 Доступна новая версия:" Foreground="#ECEEF4" FontWeight="Bold" FontSize="13"/>
-                        <TextBlock x:Name="TxtUpdateNewVersion" Text="v1.2.0" Foreground="#00E5FF" FontWeight="Bold" FontSize="13" Margin="6,0,0,0"/>
-                        <TextBlock x:Name="TxtUpdateSize" Text="" Foreground="#7A8098" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <TextBlock x:Name="TxtUpdateStatus" Text="Нажмите кнопку для загрузки и автоматического перезапуска." Foreground="#A0A5B8" FontSize="11" Margin="0,3,0,0"/>
-                    <ProgressBar x:Name="PbUpdateProgress" Visibility="Collapsed" Height="4" Margin="0,6,0,0" Foreground="#00E5FF" Background="#242938" BorderThickness="0"/>
-                </StackPanel>
-            </DockPanel>
-        </Border>
-
-        <!-- Body: Two main cards (Host and Client) -->
-        <Grid Grid.Row="2" Margin="14">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Left Card: Host (This PC) -->
-            <Border Grid.Column="0" Style="{StaticResource CardBorder}">
+            <!-- Header: strict 3-column layout so version and buttons NEVER collide -->
+            <Border Grid.Row="0" Background="#C0181312" BorderBrush="#305C423E" BorderThickness="0,0,0,1" Padding="24,14">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Row="0">
-                        <TextBlock Text="ЭТОТ КОМПЬЮТЕР" Foreground="#00E5FF" FontSize="12" FontWeight="Bold"/>
-                        <TextBlock Text="Ваше рабочее место готово к подключению" Foreground="#858B9E" FontSize="12" Margin="0,4,0,16"/>
+                    <!-- Left: Brand + Version badge -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Vibe" Foreground="#C2A878" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="Desk" Foreground="#F0EAE0" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
+                        <Border Background="#352623" BorderBrush="#505C423E" BorderThickness="1" CornerRadius="5"
+                                Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtAppVersion" Text="v1.5.0" Foreground="#C2A878" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
                     </StackPanel>
 
-                    <!-- ID Display Box -->
-                    <Border Grid.Row="1" Background="#0C0D12" BorderBrush="#262A3C" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="Ваш Vibe ID:" Foreground="#71778B" FontSize="11" FontWeight="SemiBold"/>
-                            <DockPanel Margin="0,6,0,0">
-                                <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="Копировать" Click="BtnCopyId_Click"/>
-                                <TextBlock x:Name="TxtMyId" Text="--- ---" Foreground="#FFFFFF" FontSize="28" FontWeight="Bold"/>
-                            </DockPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Host Information List -->
-                    <StackPanel Grid.Row="2" VerticalAlignment="Top">
-                        <DockPanel Margin="0,4">
-                            <TextBlock Text="Статус:" Foreground="#71778B" FontSize="12"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Border x:Name="IndicatorHost" Background="#00C853" Width="8" Height="8" CornerRadius="4" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtHostStatus" Text="Ожидание подключения..." Foreground="#E0E0E0" FontSize="12" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </DockPanel>
-
-                        <DockPanel Margin="0,6">
-                            <TextBlock Text="Движок захвата:" Foreground="#71778B" FontSize="12"/>
-                            <TextBlock x:Name="TxtCaptureEngine" Text="DirectX 11 (DXGI) 60 FPS" Foreground="#00E5FF" FontSize="12" HorizontalAlignment="Right" FontWeight="SemiBold"/>
-                        </DockPanel>
-
-                        <DockPanel Margin="0,6">
-                            <TextBlock Text="Локальный IP (для дивана):" Foreground="#71778B" FontSize="12"/>
-                            <TextBlock x:Name="TxtLocalIp" Text="192.168.x.x:15890" Foreground="#ECEEF4" FontSize="12" HorizontalAlignment="Right"/>
-                        </DockPanel>
-
-                        <DockPanel Margin="0,6">
-                            <TextBlock Text="Глобальный STUN:" Foreground="#71778B" FontSize="12"/>
-                            <TextBlock x:Name="TxtPublicEndpoint" Text="Определение..." Foreground="#A0A5B8" FontSize="12" HorizontalAlignment="Right"/>
-                        </DockPanel>
-
-                        <DockPanel Margin="0,6">
-                            <TextBlock Text="Брандмауэр Windows:" Foreground="#71778B" FontSize="12" VerticalAlignment="Center"/>
-                            <Button x:Name="BtnFixFirewall" Style="{StaticResource SecondaryButton}" Content="🛡️ Разрешить (1 клик)" Padding="8,2" FontSize="11" HorizontalAlignment="Right" Click="BtnFirewall_Click" ToolTip="Разрешить входящие подключения в Брандмауэре Windows"/>
-                        </DockPanel>
+                    <!-- Right: Quick actions -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnFirewall" Style="{StaticResource SecondaryButton}" Content="Брандмауэр"
+                                Margin="0,0,10,0" Click="BtnFirewall_Click"
+                                ToolTip="Разрешить входящие подключения в Брандмауэре Windows"/>
+                        <Button x:Name="BtnCheckUpdate" Style="{StaticResource SecondaryButton}" Content="Обновления"
+                                Click="BtnCheckUpdate_Click"
+                                ToolTip="Проверить наличие обновлений на GitHub"/>
                     </StackPanel>
-
-                    <!-- Quality / FPS selector -->
-                    <Border Grid.Row="3" Background="#13151D" CornerRadius="6" Padding="10" Margin="0,10,0,0">
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,8">
-                                <TextBlock Text="Масштаб разрешения:" Foreground="#858B9E" FontSize="12" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="CmbResolution" Width="180" HorizontalAlignment="Right" SelectedIndex="0" SelectionChanged="CmbResolution_SelectionChanged">
-                                    <ComboBoxItem Content="100% (Исходное 1080p)"/>
-                                    <ComboBoxItem Content="75% (Баланс 810p)"/>
-                                    <ComboBoxItem Content="50% (540p Турбо FPS)"/>
-                                    <ComboBoxItem Content="33% (360p Эконом)"/>
-                                </ComboBox>
-                            </DockPanel>
-                            <DockPanel>
-                                <TextBlock Text="Частота кадров (FPS):" Foreground="#858B9E" FontSize="12" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="CmbFps" Width="180" HorizontalAlignment="Right" SelectedIndex="1" SelectionChanged="CmbFps_SelectionChanged">
-                                    <ComboBoxItem Content="120 FPS (Макс. плавность)"/>
-                                    <ComboBoxItem Content="60 FPS (Стандарт)"/>
-                                    <ComboBoxItem Content="30 FPS (Эконом)"/>
-                                </ComboBox>
-                            </DockPanel>
-                        </StackPanel>
-                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Right Card: Connect to Remote PC -->
-            <Border Grid.Column="1" Style="{StaticResource CardBorder}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0">
-                        <TextBlock Text="УДАЛЕННОЕ УПРАВЛЕНИЕ" Foreground="#00E5FF" FontSize="12" FontWeight="Bold"/>
-                        <TextBlock Text="Подключитесь к домашнему ПК или серверу" Foreground="#858B9E" FontSize="12" Margin="0,4,0,16"/>
+            <!-- Update Notification Banner -->
+            <Border x:Name="BannerUpdate" Grid.Row="1" Visibility="Collapsed"
+                    Background="#D0261B1C" BorderBrush="#C2A878" BorderThickness="1"
+                    CornerRadius="8" Margin="14,10,14,0" Padding="16,12">
+                <DockPanel LastChildFill="True">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                        <Button x:Name="BtnApplyUpdate" Style="{StaticResource PrimaryButton}"
+                                Content="Обновить" Padding="14,6" Margin="10,0,0,0" Click="BtnApplyUpdate_Click"/>
+                        <Button x:Name="BtnManualDownload" Style="{StaticResource SecondaryButton}"
+                                Content="Скачать с сайта" Padding="12,6" Margin="8,0,0,0" Click="BtnManualDownload_Click"/>
+                        <Button Style="{StaticResource SecondaryButton}" Content="✕" Width="28" Height="28"
+                                Padding="0" Margin="8,0,0,0" Click="BtnCloseUpdateBanner_Click"/>
                     </StackPanel>
-
-                    <!-- Remote ID / IP input -->
-                    <StackPanel Grid.Row="1" Margin="0,0,0,14">
-                        <TextBlock Text="Введите Vibe ID или IP:Порт:" Foreground="#A0A5B8" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                        <TextBox x:Name="TxtRemoteAddress" Style="{StaticResource ModernTextBox}" Text="" KeyDown="TxtRemoteAddress_KeyDown"/>
-                        <TextBlock Text="Пример: 849 203 (через интернет) или 192.168.1.50 (дома)" Foreground="#5E6377" FontSize="11" Margin="0,4,0,0"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Доступна новая версия:" Foreground="#F0EAE0" FontWeight="Bold" FontSize="13"/>
+                            <TextBlock x:Name="TxtUpdateNewVersion" Text="v1.5.0" Foreground="#C2A878"
+                                       FontWeight="Bold" FontSize="13" Margin="8,0,0,0"/>
+                            <TextBlock x:Name="TxtUpdateSize" Text="" Foreground="#8A7F74"
+                                       FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TxtUpdateStatus" Foreground="#8A7F74" FontSize="11" Margin="0,4,0,0"
+                                   Text="Нажмите «Обновить» для загрузки новой версии и быстрого перезапуска."/>
+                        <ProgressBar x:Name="PbUpdateProgress" Visibility="Collapsed" Height="4" Margin="0,8,0,0"
+                                     Foreground="#C2A878" Background="#261E1C" BorderThickness="0"/>
                     </StackPanel>
+                </DockPanel>
+            </Border>
 
-                    <!-- Connect Action Button -->
-                    <Button Grid.Row="2" x:Name="BtnConnect" Style="{StaticResource PrimaryButton}" Content="⚡ Подключиться" Margin="0,0,0,10" Click="BtnConnect_Click"/>
+            <!-- Main Content Area: Left = Recent Connections, Right = This PC + Remote Control -->
+            <Grid Grid.Row="2" Margin="12,8,12,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                    <!-- Connection status & logs -->
-                    <Grid Grid.Row="3">
+                <!-- LEFT: Recent Connections (Clean single panel, no nested frames) -->
+                <Border Grid.Column="0" Style="{StaticResource GlassPanel}">
+                    <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        
-                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
-                            <TextBlock Text="Журнал событий и диагностика:" Foreground="#858B9E" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Style="{StaticResource SecondaryButton}" Content="Копировать" Padding="6,2" Margin="0,0,4,0" Click="BtnCopyLogs_Click"/>
-                                <Button Style="{StaticResource SecondaryButton}" Content="Очистить" Padding="6,2" Click="BtnClearLogs_Click"/>
+
+                        <!-- Heading -->
+                        <TextBlock Grid.Row="0" Text="Недавние подключения" Foreground="#C2A878"
+                                   FontSize="14" FontWeight="SemiBold" Margin="0,0,0,16"/>
+
+                        <!-- List / Empty state -->
+                        <Grid Grid.Row="1">
+                            <!-- Empty State -->
+                            <StackPanel x:Name="PanelRecentEmpty" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="Нет недавних подключений" Foreground="#8A7F74" FontSize="13"
+                                           FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                <TextBlock Text="Здесь появятся компьютеры после первого подключения." Foreground="#6E645A"
+                                           FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <!-- List -->
+                            <ListBox x:Name="ListRecentConnections"
+                                     Style="{StaticResource CleanListBox}"
+                                     ItemContainerStyle="{StaticResource RecentItemStyle}"
+                                     SelectionChanged="ListRecentConnections_SelectionChanged"
+                                     MouseDoubleClick="ListRecentConnections_MouseDoubleClick"
+                                     Visibility="Collapsed">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- ID Badge -->
+                                            <Border Grid.Column="0" Background="#4A262D" BorderBrush="#70773344" BorderThickness="1" CornerRadius="6"
+                                                    Padding="10,5" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding FormattedId}" Foreground="#C2A878"
+                                                           FontSize="13" FontWeight="Bold" FontFamily="Consolas"/>
+                                            </Border>
+
+                                            <!-- Info -->
+                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#F0EAE0"
+                                                           FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding LastConnectedStr}" Foreground="#8A7F74" FontSize="11"/>
+                                            </StackPanel>
+
+                                            <!-- Connect arrow -->
+                                            <TextBlock Grid.Column="2" Text="→" Foreground="#C2A878"
+                                                       FontSize="16" VerticalAlignment="Center" Margin="6,0,2,0"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- RIGHT: This PC + Remote Control -->
+                <Grid Grid.Column="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Block 1: Этот компьютер (ТОЛЬКО ID, статус и копирование - без лишней инфы) -->
+                    <Border Grid.Row="0" Style="{StaticResource GlassPanel}">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                                <Button x:Name="BtnCopyId" Style="{StaticResource SecondaryButton}" Content="Копировать"
+                                        Click="BtnCopyId_Click" Padding="16,8" ToolTip="Скопировать Vibe ID в буфер обмена"/>
+                            </StackPanel>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Этот компьютер" Foreground="#8A7F74" FontSize="12" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border x:Name="IndicatorHost" Background="#C2A878" Width="10" Height="10"
+                                            CornerRadius="5" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TxtMyId" Text="--- ---" Foreground="#F0EAE0"
+                                               FontSize="30" FontWeight="Bold" FontFamily="Consolas"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtHostStatus" Text="Ожидание подключения..." Foreground="#8A7F74"
+                                           FontSize="11" Margin="0,4,0,0"/>
                             </StackPanel>
                         </DockPanel>
+                    </Border>
 
-                        <Border Grid.Row="1" Background="#0C0D12" BorderBrush="#202330" BorderThickness="1" CornerRadius="6" Padding="10">
-                            <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto">
-                                <TextBox x:Name="TxtClientLog"
-                                         Background="Transparent"
-                                         Foreground="#8F96AB"
-                                         BorderThickness="0"
-                                         FontFamily="Consolas, Segoe UI Mono, monospace"
-                                         FontSize="11"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Disabled"/>
-                            </ScrollViewer>
-                        </Border>
-                    </Grid>
+                    <!-- Block 2: Удаленное управление (Чистый вид без вложенных коробок) -->
+                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
 
-                    <!-- Quick couch connection hint -->
-                    <Border Grid.Row="4" Background="#13151D" CornerRadius="6" Padding="10" Margin="0,10,0,0">
-                        <TextBlock Text="💡 Для дивана в той же квартире используйте локальный IP — это даст минимальный пинг (1 мс)!" Foreground="#858B9E" FontSize="11" TextWrapping="Wrap"/>
+                            <!-- Heading -->
+                            <TextBlock Grid.Row="0" Text="Удалённое управление" Foreground="#C2A878"
+                                       FontSize="14" FontWeight="SemiBold" Margin="0,0,0,14"/>
+
+                            <!-- Input Row -->
+                            <StackPanel Grid.Row="1" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0" x:Name="TxtRemoteAddress"
+                                             Style="{StaticResource ModernTextBox}"
+                                             Text="" KeyDown="TxtRemoteAddress_KeyDown"
+                                             Margin="0,0,10,0"/>
+                                    <Button Grid.Column="1" x:Name="BtnConnect"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Content="Подключиться" Click="BtnConnect_Click"
+                                            Padding="22,10"/>
+                                </Grid>
+                                <TextBlock Text="Введите Vibe ID или IP:порт удаленного компьютера."
+                                           Foreground="#6E645A" FontSize="11" Margin="2,6,0,0"/>
+                            </StackPanel>
+
+                            <!-- Journal (Seamless console without double nested frames) -->
+                            <Grid Grid.Row="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                                    <TextBlock Text="Журнал" Foreground="#8A7F74" FontSize="12"
+                                               FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Style="{StaticResource SecondaryButton}" Content="Копировать"
+                                                Padding="8,3" Margin="0,0,6,0" Click="BtnCopyLogs_Click"/>
+                                        <Button Style="{StaticResource SecondaryButton}" Content="Очистить"
+                                                Padding="8,3" Click="BtnClearLogs_Click"/>
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <Border Grid.Row="1" Background="#500E0B0A" BorderBrush="#305C423E"
+                                        BorderThickness="1" CornerRadius="8" Padding="12">
+                                    <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto">
+                                        <TextBox x:Name="TxtClientLog"
+                                                 Background="Transparent"
+                                                 Foreground="#9C9286"
+                                                 BorderThickness="0"
+                                                 FontFamily="Consolas, Segoe UI Mono, monospace"
+                                                 FontSize="11"
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Disabled"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </Grid>
                     </Border>
                 </Grid>
-            </Border>
-        </Grid>
+            </Grid>
 
-        <!-- Footer -->
-        <Border Grid.Row="3" Background="#0D0E13" BorderBrush="#1C1E28" BorderThickness="0,1,0,0" Padding="16,8">
-            <DockPanel>
-                <TextBlock x:Name="TxtFooterStatus" Text="VibeDesk P2P Online • UDP Direct Tunnel Ready" Foreground="#5E6377" FontSize="11" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TxtFooterVersion" Text="VibeDesk v1.1.0" Foreground="#5E6377" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            </DockPanel>
-        </Border>
+            <!-- Footer: Minimal clean line -->
+            <Border Grid.Row="3" Background="#C0181312" BorderBrush="#305C423E" BorderThickness="0,1,0,0" Padding="20,8">
+                <DockPanel>
+                    <TextBlock x:Name="TxtFooterStatus" Text="VibeDesk P2P, UDP direct"
+                               Foreground="#6E645A" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtFooterVersion" Text="VibeDesk"
+                               Foreground="#6E645A" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Hidden Functional Controls (Preserves C# bindings without cluttering the UI) -->
+            <StackPanel Visibility="Collapsed">
+                <TextBlock x:Name="TxtCaptureEngine"/>
+                <TextBlock x:Name="TxtLocalIp"/>
+                <TextBlock x:Name="TxtPublicEndpoint"/>
+                <Button x:Name="BtnFixFirewall"/>
+                <ComboBox x:Name="CmbResolution">
+                    <ComboBoxItem Content="100%"/>
+                    <ComboBoxItem Content="75%"/>
+                    <ComboBoxItem Content="50%"/>
+                    <ComboBoxItem Content="33%"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbFps">
+                    <ComboBoxItem Content="120 FPS"/>
+                    <ComboBoxItem Content="60 FPS"/>
+                    <ComboBoxItem Content="30 FPS"/>
+                </ComboBox>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
