@@ -73,6 +73,18 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
+        public async Task TestStunBeforeHostStart()
+        {
+            int testPort = 15894;
+            var (ep, isSym, msg) = await StunResolver.ProbeAsync(testPort);
+            Assert.IsNotNull(ep, "STUN probe must resolve public endpoint");
+
+            using var host = new VibeHost(testPort);
+            bool started = host.Start();
+            Assert.IsTrue(started, "Host must start successfully after STUN probe");
+        }
+
+        [TestMethod]
         public async Task TestVibeHostAndClientDirectConnection()
         {
             int testPort = 15898;

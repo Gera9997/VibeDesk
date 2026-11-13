@@ -423,10 +423,19 @@ namespace VibeDesk.Network
             {
                 byte[] packet = PacketBuilder.CreatePunch(deviceId);
                 _netClient.SendUnconnectedMessage(packet, target);
+
+                // Дополнительно пробиваем соседние порты (от -3 до +3) на случай сдвига порта мобильным NAT/CGNAT
                 if (target.Port > 1024 && target.Port < 65530)
                 {
-                    _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, target.Port + 1));
-                    _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, target.Port - 1));
+                    for (int delta = -3; delta <= 3; delta++)
+                    {
+                        if (delta == 0) continue;
+                        int p = target.Port + delta;
+                        if (p > 1024 && p < 65535)
+                        {
+                            _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, p));
+                        }
+                    }
                 }
             }
             catch { }

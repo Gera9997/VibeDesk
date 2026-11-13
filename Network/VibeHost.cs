@@ -500,11 +500,18 @@ namespace VibeDesk.Network
                 byte[] punch = PacketBuilder.CreatePunch(DeviceId);
                 _netServer.SendUnconnectedMessage(punch, target);
 
-                // Дополнительно пробиваем соседние порты (+1 / -1) на случай сдвига порта роутером
+                // Дополнительно пробиваем соседние порты (от -3 до +3) на случай сдвига порта мобильным NAT/CGNAT
                 if (target.Port > 1024 && target.Port < 65530)
                 {
-                    _netServer.SendUnconnectedMessage(punch, new IPEndPoint(target.Address, target.Port + 1));
-                    _netServer.SendUnconnectedMessage(punch, new IPEndPoint(target.Address, target.Port - 1));
+                    for (int delta = -3; delta <= 3; delta++)
+                    {
+                        if (delta == 0) continue;
+                        int p = target.Port + delta;
+                        if (p > 1024 && p < 65535)
+                        {
+                            _netServer.SendUnconnectedMessage(punch, new IPEndPoint(target.Address, p));
+                        }
+                    }
                 }
             }
             catch { }

@@ -68,17 +68,24 @@ namespace VibeDesk
             {
                 FirewallHelper.AddFirewallRules(elevateIfNeed: false);
             }
+            else
+            {
+                AppendLog("💡 Совет: если к этому ПК не удается подключиться, нажмите кнопку '🛡️ Брандмауэр' для открытия портов.");
+            }
 
-            // 1. Сначала запускаем локальный хост (открывает реальный UDP-сокет LiteNetLib)
-            StartLocalHost();
+            // 1. Находим актуальный LAN IP
+            FindRealLocalIp();
 
-            // 2. Определяем STUN напрямую через уже открытый сокет хоста!
+            // 2. Выполняем STUN probe чистым UDP-сокетом на порту хоста ДО запуска LiteNetLib
             await ResolveStunAsync();
 
-            // 3. Регистрируемся в глобальном сигналинге
+            // 3. Запускаем локальный хост LiteNetLib на порту 15890
+            StartLocalHost();
+
+            // 4. Регистрируемся в глобальном сигналинге
             _ = InitializeSignalingAsync();
 
-            // 4. Фоновая проверка обновлений
+            // 5. Фоновая проверка обновлений
             _ = CheckForUpdatesQuietlyAsync();
         }
 
@@ -180,15 +187,15 @@ namespace VibeDesk
         private async Task ResolveStunAsync()
         {
             TxtPublicEndpoint.Text = "STUN поиск...";
-            AppendLog("🔍 Запрос STUN напрямую через активный UDP-сокет хоста...");
+            AppendLog("🔍 Запрос STUN (Cloudflare / Google)...");
 
-            var stunEp = await _host.QueryStunOverActiveSocketAsync(2000);
+            var (stunEp, isSym, msg) = await StunResolver.ProbeAsync(_host.Port, _myLocalIp);
             if (stunEp != null)
             {
                 _physicalPublicEndPoint = stunEp;
                 _myPublicEndPoint = stunEp;
                 TxtPublicEndpoint.Text = $"{stunEp.Address}:{stunEp.Port}";
-                AppendLog($"✅ STUN успешен (порт сокета хоста): {stunEp.Address}:{stunEp.Port}");
+                AppendLog($"✅ {msg}");
                 return;
             }
 
@@ -224,10 +231,16 @@ namespace VibeDesk
                         {
                             mappings.Add(port, "UDP", port, _myLocalIp, true, "VibeDesk");
                             Dispatcher.InvokeAsync(() => AppendLog($"⚡ [UPnP] Порт {port} (UDP) открыт на домашнем роутере!"));
+                            return;
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Dispatcher.InvokeAsync(() => AppendLog($"ℹ️ [UPnP] UPnP не поддерживается или отключен на роутере: {ex.Message}"));
+                    return;
+                }
+                Dispatcher.InvokeAsync(() => AppendLog("ℹ️ [UPnP] UPnP не ответил на текущем интерфейсе."));
             });
         }
 
@@ -338,18 +351,11 @@ namespace VibeDesk
                         {
                             _host.PunchNat(target);
                         }
-                        try { await Task.Delay(100, punchCts.Token); } catch { break; }
+                        try { await Task.Delay(70, punchCts.Token); } catch { break; }
                     }
                 });
 
                 _ = Dispatcher.InvokeAsync(() => AppendLog($"🥊 [Хост] Запущен непрерывный встречный UDP-punch по адресам клиента ({punchTargets.Count} эндпоинтов)..."));
-
-                var freshStun = await _host.QueryStunOverActiveSocketAsync(600);
-                if (freshStun != null)
-                {
-                    _physicalPublicEndPoint = freshStun;
-                    _myPublicEndPoint = freshStun;
-                }
 
                 var bestPubEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
                 string pubIpStr = bestPubEp?.Address.ToString() ?? "";
@@ -406,15 +412,22 @@ namespace VibeDesk
                 {
                     AppendLog($"🔎 Поиск хоста {FormatId(target)} в локальной сети (LAN) и через глобальные серверы...");
 
-                    // 1. Сначала запускаем клиентский сокет на порту 15891
+                    // 1. Обновляем локальный IP на случай смены сети (Wi-Fi <-> Hotspot)
+                    FindRealLocalIp();
+
+                    // 2. Узнаем реальный внешний IP:Port открытого сокета клиента через STUN ДО запуска клиента!
+                    var (clientStunEp, _, clientStunMsg) = await StunResolver.ProbeAsync(VibeClient.DefaultClientPort, _myLocalIp);
+                    if (clientStunEp != null)
+                    {
+                        AppendLog($"🌐 [STUN Клиент] {clientStunMsg}");
+                    }
+
+                    // 3. Запускаем клиентский сокет на порту 15891
                     var client = new VibeClient();
                     client.Start(VibeClient.DefaultClientPort, bindIp: _myLocalIp);
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
                     client.OnPunchReceived += ep => _lastPunchReceivedFrom = ep;
                     client.OnPunchAckReceived += ep => _lastPunchReceivedFrom = ep;
-
-                    // 2. Узнаем реальный внешний IP:Port открытого клиентского сокета через STUN!
-                    var clientStunEp = await client.QueryStunOverActiveSocketAsync(1500);
 
                     int clientLocalPort = client.LocalPort;
                     string clientPubIp = clientStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? (_myPublicEndPoint?.Address.ToString() ?? ""));
@@ -514,7 +527,7 @@ namespace VibeDesk
                             {
                                 client.Punch(targetEp, _myDeviceId);
                             }
-                            try { await Task.Delay(200, clientPunchCts.Token); } catch { break; }
+                            try { await Task.Delay(70, clientPunchCts.Token); } catch { break; }
                         }
                     });
 
@@ -752,6 +765,7 @@ namespace VibeDesk
             client.OnConnected += onConn;
             client.OnDisconnected += onDis;
             client.OnPunchAckReceived += onPunch;
+            client.OnPunchReceived += onPunch;
 
             using var punchCts = new CancellationTokenSource();
 
@@ -768,7 +782,7 @@ namespace VibeDesk
                         while (!punchCts.Token.IsCancellationRequested && !client.IsConnected)
                         {
                             client.Punch(targetEp, _myDeviceId);
-                            try { await Task.Delay(80, punchCts.Token); } catch { break; }
+                            try { await Task.Delay(60, punchCts.Token); } catch { break; }
                         }
                     });
                 }
@@ -787,6 +801,7 @@ namespace VibeDesk
                 client.OnConnected -= onConn;
                 client.OnDisconnected -= onDis;
                 client.OnPunchAckReceived -= onPunch;
+                client.OnPunchReceived -= onPunch;
             }
         }
 

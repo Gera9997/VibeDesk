@@ -20,8 +20,12 @@ namespace VibeDesk.Network.P2P
             using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
             try
             {
+                var addrs = await Dns.GetHostAddressesAsync(stunHost);
+                var ipv4 = System.Linq.Enumerable.FirstOrDefault(addrs, a => a.AddressFamily == AddressFamily.InterNetwork);
+                if (ipv4 == null) return null;
+
                 byte[] request = CreateBindingRequest();
-                await udp.SendAsync(request, request.Length, stunHost, stunPort);
+                await udp.SendAsync(request, request.Length, new IPEndPoint(ipv4, stunPort));
                 var result = await udp.ReceiveAsync(cts.Token);
                 return ParseResponse(result.Buffer);
             }
