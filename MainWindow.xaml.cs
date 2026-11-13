@@ -91,8 +91,19 @@ namespace VibeDesk
 
         private void MainWindow_Closed(object? sender, EventArgs e)
         {
-            _host.Dispose();
-            _signaling.Dispose();
+            try
+            {
+                Task.Run(() =>
+                {
+                    try { _host.Dispose(); } catch { }
+                    try { _signaling.Dispose(); } catch { }
+                });
+            }
+            catch { }
+            finally
+            {
+                Environment.Exit(0);
+            }
         }
 
         private string GetOrCreateDeviceId()

@@ -164,60 +164,72 @@ namespace VibeDesk.Update
             try { if (File.Exists(updateFilePath)) File.Delete(updateFilePath); } catch { }
             try { string staleUpdater = Path.Combine(currentDir, "VibeDesk_updater.cmd"); if (File.Exists(staleUpdater)) File.Delete(staleUpdater); } catch { }
 
-            try
+            // Candidate URLs: Direct GitHub, and fast mirror proxies (bypasses ISP blocks on objects.githubusercontent.com)
+            var candidateUrls = new List<string>
             {
-                using var response = await _downloadClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
+                downloadUrl,
+                $"https://gh-proxy.com/{downloadUrl}",
+                $"https://ghproxy.net/{downloadUrl}"
+            };
 
-                long totalBytes = response.Content.Headers.ContentLength ?? -1L;
+            Exception? lastError = null;
 
-                using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
-                using (var fileStream = new FileStream(updateFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
-                {
-                    byte[] buffer = new byte[128 * 1024];
-                    long totalRead = 0;
-                    int read;
-
-                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
-                    {
-                        await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                        totalRead += read;
-
-                        if (totalBytes > 0)
-                        {
-                            int percent = (int)((totalRead * 100) / totalBytes);
-                            progress?.Report((totalRead, totalBytes, percent));
-                        }
-                        else
-                        {
-                            progress?.Report((totalRead, -1, 0));
-                        }
-                    }
-                }
-
-                // Verify file integrity
-                var fileInfo = new FileInfo(updateFilePath);
-                if (!fileInfo.Exists || fileInfo.Length < 10 * 1024 * 1024)
-                {
-                    throw new IOException($"Скачанный файл обновления поврежден или имеет неполный размер ({fileInfo.Length} байт).");
-                }
-
-                // File downloaded completely. Now apply update and restart!
-                ApplyUpdateAndRestart(updateFilePath, currentExe);
-                return true;
-            }
-            catch (Exception)
+            foreach (var url in candidateUrls)
             {
                 try
                 {
-                    if (File.Exists(updateFilePath))
+                    using var response = await _downloadClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    if (!response.IsSuccessStatusCode)
                     {
-                        File.Delete(updateFilePath);
+                        continue;
                     }
+
+                    long totalBytes = response.Content.Headers.ContentLength ?? -1L;
+
+                    using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                    using (var fileStream = new FileStream(updateFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
+                    {
+                        byte[] buffer = new byte[128 * 1024];
+                        long totalRead = 0;
+                        int read;
+
+                        while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                        {
+                            await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                            totalRead += read;
+
+                            if (totalBytes > 0)
+                            {
+                                int percent = (int)((totalRead * 100) / totalBytes);
+                                progress?.Report((totalRead, totalBytes, percent));
+                            }
+                            else
+                            {
+                                progress?.Report((totalRead, -1, 0));
+                            }
+                        }
+                    }
+
+                    // Verify file integrity (must be at least 15 MB)
+                    var fileInfo = new FileInfo(updateFilePath);
+                    if (!fileInfo.Exists || fileInfo.Length < 15 * 1024 * 1024)
+                    {
+                        try { if (File.Exists(updateFilePath)) File.Delete(updateFilePath); } catch { }
+                        continue;
+                    }
+
+                    // File downloaded completely. Now apply update and restart!
+                    ApplyUpdateAndRestart(updateFilePath, currentExe);
+                    return true;
                 }
-                catch { }
-                throw;
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    try { if (File.Exists(updateFilePath)) File.Delete(updateFilePath); } catch { }
+                }
             }
+
+            throw new IOException($"Не удалось загрузить файл обновления (проверены прямой сервер и зеркала): {lastError?.Message}", lastError);
         }
 
         private static void ApplyUpdateAndRestart(string newFilePath, string currentExe)

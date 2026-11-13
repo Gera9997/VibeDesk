@@ -203,7 +203,15 @@ namespace VibeDesk.Network.P2P
             _isDisposed = true;
             try
             {
-                _mqttClient?.Dispose();
+                var client = _mqttClient;
+                _mqttClient = null;
+                if (client != null)
+                {
+                    Task.Run(() =>
+                    {
+                        try { client.Dispose(); } catch { }
+                    });
+                }
             }
             catch { }
         }
