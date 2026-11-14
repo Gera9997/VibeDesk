@@ -152,10 +152,12 @@ namespace VibeDesk.Tests
                     Assert.AreEqual((byte)0xD8, s[3], "JPEG SOI marker byte 2");
                 }
 
-                // Subsequent capture without changes should only capture the single healing sweep strip
+                // Subsequent capture without changes should return null (zero-change skip) or at most 2 healing strips
                 var secondStrips = manager.CaptureDirtyStrips(forceAll: false);
-                Assert.IsNotNull(secondStrips);
-                Assert.IsTrue(secondStrips.Count <= 2, $"Expected at most 2 dirty strips on static screen, got {secondStrips.Count}");
+                if (secondStrips != null)
+                {
+                    Assert.IsTrue(secondStrips.Count <= 2, $"Expected at most 2 dirty strips on static screen, got {secondStrips.Count}");
+                }
             }
         }
 
