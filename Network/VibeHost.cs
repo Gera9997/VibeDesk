@@ -27,7 +27,7 @@ namespace VibeDesk.Network
         private Thread? _streamingThread;
         private volatile bool _isRunning = false;
         private volatile int _targetFps = 25;
-        private volatile int _maxBitrateKbps = 3500;
+        private volatile int _maxBitrateKbps = 15000;
         private uint _frameCounter = 0;
         private volatile uint _lastClientAckedFrameId = 0;
         private uint _lastSentFrameId = 0;
@@ -209,7 +209,7 @@ namespace VibeDesk.Network
             OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
         }
 
-        public bool Start(int targetFps = 25, int jpegQuality = 55, float scale = 0.70f, string bindIp = "", int maxBitrateKbps = 3500)
+        public bool Start(int targetFps = 25, int jpegQuality = 55, float scale = 0.70f, string bindIp = "", int maxBitrateKbps = 15000)
         {
             if (_isRunning) return true;
 
@@ -275,6 +275,10 @@ namespace VibeDesk.Network
             long bytesSentThisSecond = 0;
             long lastKeepaliveMs = 0;
 
+            long maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
+            double tokenBucket = maxBytesPerSec * 0.15; // burst-окно 150 мс
+            long lastTokenTicks = Stopwatch.GetTimestamp();
+
             while (_isRunning)
             {
                 stopwatch.Restart();
@@ -292,6 +296,14 @@ namespace VibeDesk.Network
                         bytesSentThisSecond = 0;
                         fpsStopwatch.Restart();
                     }
+
+                    // Обновляем параметры Token Bucket
+                    maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
+                    double maxBurst = Math.Max(65536, maxBytesPerSec * 0.25);
+                    long tokenNow = Stopwatch.GetTimestamp();
+                    double elapsedSec = Math.Max(0, (double)(tokenNow - lastTokenTicks) / Stopwatch.Frequency);
+                    lastTokenTicks = tokenNow;
+                    tokenBucket = Math.Min(maxBurst, tokenBucket + (elapsedSec * maxBytesPerSec));
 
                     // NAT Keepalive: каждые 15 секунд отправляем реальный STUN-запрос, чтобы роутер держал внешний порт открытым!
                     if (_connectedPeer == null && fpsStopwatch.ElapsedMilliseconds - lastKeepaliveMs >= 15000)
@@ -334,12 +346,13 @@ namespace VibeDesk.Network
                         bool allowSend = true;
                         bool forceKeyframe = (framesThisSecond == 0 && msSinceLastSend > 1000);
 
-                        // Не блокируем поток на 180 мс! Если ACK от полос задержался более чем на 55 мс — сбрасываем счетчик и шлем актуальные данные
-                        if (inFlight > 8)
+                        // Окно inFlight: 8 полос в кадре. Порог 32 = до 4 полных кадров в пути через Интернет.
+                        // Если ACK задержался через интернет более чем на 35 мс — плавно двигаем окно, чтобы не тормозить стрим!
+                        if (inFlight > 32)
                         {
-                            if (msSinceLastSend > 55)
+                            if (msSinceLastSend > 35)
                             {
-                                _lastClientAckedFrameId = _lastSentFrameId;
+                                _lastClientAckedFrameId = _lastSentFrameId - 8;
                             }
                             else
                             {
@@ -347,8 +360,8 @@ namespace VibeDesk.Network
                             }
                         }
 
-                        long maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
-                        if (bytesSentThisSecond >= maxBytesPerSec && framesThisSecond > 1)
+                        // Плавный Token Bucket: исключает заморозку на 800 мс в конце секунды
+                        if (tokenBucket < 0 && framesThisSecond > 0 && !forceKeyframe)
                         {
                             allowSend = false;
                         }
@@ -378,6 +391,7 @@ namespace VibeDesk.Network
 
                                         peer.Send(chunkPacket, DeliveryMethod.Unreliable);
                                         bytesSentThisSecond += chunkPacket.Length;
+                                        tokenBucket -= chunkPacket.Length;
                                     }
                                 }
 

@@ -128,10 +128,10 @@
 
         <!-- Recent Connection Item -->
         <Style x:Key="RecentItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Background" Value="#40231B19"/>
+            <Setter Property="Background" Value="#35201B19"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#305C423E"/>
-            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="BorderBrush" Value="#255C423E"/>
+            <Setter Property="Padding" Value="8,6"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -146,11 +146,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#50773344"/>
-                                <Setter Property="BorderBrush" Value="#70773344"/>
+                                <Setter Property="Background" Value="#50452C28"/>
+                                <Setter Property="BorderBrush" Value="#70C2A878"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#70773344"/>
+                                <Setter Property="Background" Value="#60773344"/>
                                 <Setter Property="BorderBrush" Value="#C2A878"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -276,34 +276,56 @@
                                      Style="{StaticResource CleanListBox}"
                                      ItemContainerStyle="{StaticResource RecentItemStyle}"
                                      SelectionChanged="ListRecentConnections_SelectionChanged"
+                                     PreviewMouseLeftButtonUp="ListRecentConnections_PreviewMouseLeftButtonUp"
                                      MouseDoubleClick="ListRecentConnections_MouseDoubleClick"
                                      Visibility="Collapsed">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid>
+                                        <Grid Height="62">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
+                                                <!-- Remote screen thumbnail / wallpaper -->
+                                                <ColumnDefinition Width="94"/>
+                                                <!-- Single ID + Availability Circle -->
                                                 <ColumnDefinition Width="*"/>
+                                                <!-- Connect arrow -->
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- ID Badge -->
-                                            <Border Grid.Column="0" Background="#4A262D" BorderBrush="#70773344" BorderThickness="1" CornerRadius="6"
-                                                    Padding="10,5" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding FormattedId}" Foreground="#C2A878"
-                                                           FontSize="13" FontWeight="Bold" FontFamily="Consolas"/>
+                                            <!-- Thumbnail Container (Screenshot or Wallpaper) -->
+                                            <Border Grid.Column="0" CornerRadius="6" ClipToBounds="True"
+                                                    Background="#1A1413" BorderBrush="#35C2A878" BorderThickness="1">
+                                                <Grid>
+                                                    <Image Source="{Binding ThumbnailSource}" Stretch="UniformToFill"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <!-- Subtle dark vignette overlay -->
+                                                    <Border Background="#20000000"/>
+                                                </Grid>
                                             </Border>
 
-                                            <!-- Info -->
-                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding DisplayName}" Foreground="#F0EAE0"
-                                                           FontSize="12" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding LastConnectedStr}" Foreground="#8A7F74" FontSize="11"/>
+                                            <!-- Info: Only ONE ID + Status Circle + Subtitle -->
+                                            <StackPanel Grid.Column="1" Margin="12,0,6,0" VerticalAlignment="Center">
+                                                <!-- Top row: Status Circle + ID -->
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Ellipse Width="8" Height="8" Fill="{Binding StatusBrush}"
+                                                             ToolTip="{Binding StatusToolTip}"
+                                                             Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding FormattedId}" Foreground="#F0EAE0"
+                                                               FontSize="15" FontWeight="Bold" FontFamily="Consolas"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+
+                                                <!-- Subtitle: status state and timestamp -->
+                                                <TextBlock Text="{Binding StatusSubtitle}" Foreground="#8A7F74"
+                                                           FontSize="11" Margin="16,4,0,0"/>
                                             </StackPanel>
 
-                                            <!-- Connect arrow -->
-                                            <TextBlock Grid.Column="2" Text="→" Foreground="#C2A878"
-                                                       FontSize="16" VerticalAlignment="Center" Margin="6,0,2,0"/>
+                                            <!-- Connect arrow button -->
+                                            <Border Grid.Column="2" Width="26" Height="26" CornerRadius="13"
+                                                    Background="#25773344" BorderBrush="#40773344" BorderThickness="1"
+                                                    VerticalAlignment="Center" Margin="0,0,2,0">
+                                                <TextBlock Text="→" Foreground="#C2A878" FontSize="13" FontWeight="Bold"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
+                                            </Border>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>

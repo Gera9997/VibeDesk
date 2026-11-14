@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -13,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using VibeDesk.Native;
 using VibeDesk.Network;
 using VibeDesk.Network.P2P;
@@ -22,13 +24,45 @@ using VibeDesk.Update;
 namespace VibeDesk
 {
     // ─── Recent connections model ───────────────────────────────────────────────
-    public class RecentConnection
+    public class RecentConnection : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private bool? _isOnline;
+
         public string DeviceId { get; set; } = "";
         public string? Alias { get; set; }
         public DateTime LastConnected { get; set; }
 
-        // UI helpers
+        public bool? IsOnline
+        {
+            get => _isOnline;
+            set
+            {
+                if (_isOnline != value)
+                {
+                    _isOnline = value;
+                    OnPropertyChanged(nameof(IsOnline));
+                    OnPropertyChanged(nameof(StatusBrush));
+                    OnPropertyChanged(nameof(StatusSubtitle));
+                    OnPropertyChanged(nameof(StatusToolTip));
+                }
+            }
+        }
+
+        public Brush StatusBrush => IsOnline switch
+        {
+            true => new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)), // Green
+            false => new SolidColorBrush(Color.FromRgb(0x66, 0x5C, 0x56)), // Muted Gray
+            null => new SolidColorBrush(Color.FromRgb(0xC2, 0xA8, 0x78))   // Amber checking
+        };
+
+        public string StatusToolTip => IsOnline switch
+        {
+            true => "Порт доступен (хост в сети)",
+            false => "Недоступен (хост не в сети)",
+            null => "Проверка доступности хоста..."
+        };
+
         public string FormattedId => DeviceId.Length == 6
             ? $"{DeviceId[..3]} {DeviceId[3..]}"
             : DeviceId;
@@ -47,6 +81,65 @@ namespace VibeDesk
                 return LastConnected.ToString("dd.MM.yyyy");
             }
         }
+
+        public string StatusSubtitle
+        {
+            get
+            {
+                string state = IsOnline switch
+                {
+                    true => "В сети",
+                    false => "Не в сети",
+                    null => "Проверка..."
+                };
+                return $"{state} • {LastConnectedStr}";
+            }
+        }
+
+        public ImageSource ThumbnailSource
+        {
+            get
+            {
+                try
+                {
+                    string thumbDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "thumbnails");
+                    string thumbFile = Path.Combine(thumbDir, $"{DeviceId}.jpg");
+                    if (File.Exists(thumbFile))
+                    {
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.UriSource = new Uri(thumbFile, UriKind.Absolute);
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        return bmp;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var defaultBmp = new BitmapImage();
+                    defaultBmp.BeginInit();
+                    defaultBmp.CacheOption = BitmapCacheOption.OnLoad;
+                    defaultBmp.UriSource = new Uri("pack://application:,,,/Assets/background.jpg");
+                    defaultBmp.EndInit();
+                    defaultBmp.Freeze();
+                    return defaultBmp;
+                }
+                catch
+                {
+                    return null!;
+                }
+            }
+        }
+
+        public void NotifyThumbnailChanged()
+        {
+            OnPropertyChanged(nameof(ThumbnailSource));
+        }
+
+        private void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
     }
 
     public partial class MainWindow : Window
@@ -442,11 +535,18 @@ namespace VibeDesk
         private async void BtnConnect_Click(object sender, RoutedEventArgs e)
         {
             string target = TxtRemoteAddress.Text.Trim().Replace(" ", "");
+            await ConnectToTargetAsync(target);
+        }
+
+        private async Task ConnectToTargetAsync(string target)
+        {
             if (string.IsNullOrEmpty(target))
             {
-                MessageBox.Show(this, "Введите Vibe ID или IP:Порт для подключения.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
+                VibeMessageBox.Show(this, "Введите Vibe ID или IP:Порт для подключения.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+
+            if (!BtnConnect.IsEnabled) return;
 
             BtnConnect.IsEnabled = false;
             _lastPunchReceivedFrom = null;
@@ -508,7 +608,8 @@ namespace VibeDesk
                             AddRecentConnection(target);
                             Dispatcher.Invoke(() =>
                             {
-                                var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
+                                var sessionWindow = new RemoteSessionWindow(client, target) { Owner = this };
+                                sessionWindow.Closed += (s, ev) => Dispatcher.InvokeAsync(LoadRecentConnections);
                                 sessionWindow.Show();
                             });
                             return;
@@ -543,7 +644,7 @@ namespace VibeDesk
                         client.Dispose();
                         AppendLog($"❌ Хост с ID {FormatId(target)} не ответил ни в локальной сети, ни через глобальный сервер.");
                         AppendLog("   Подсказка: убедитесь, что VibeDesk запущен на удаленном ПК и нажмите на нем кнопку '🛡️ Брандмауэр'.");
-                        MessageBox.Show(this, $"Устройство с ID {FormatId(target)} не отвечает.\n\nУбедитесь, что VibeDesk запущен на удаленном ПК и разрешен в Брандмауэре Windows.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                        VibeMessageBox.Show(this, $"Устройство с ID {FormatId(target)} не отвечает.\n\nУбедитесь, что VibeDesk запущен на удаленном ПК и разрешен в Брандмауэре Windows.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
                         BtnConnect.IsEnabled = true;
                         return;
                     }
@@ -713,7 +814,8 @@ namespace VibeDesk
                             try
                             {
                                 AddRecentConnection(target);
-                                var sessionWindow = new RemoteSessionWindow(client) { Owner = this };
+                                var sessionWindow = new RemoteSessionWindow(client, target) { Owner = this };
+                                sessionWindow.Closed += (s, ev) => Dispatcher.InvokeAsync(LoadRecentConnections);
                                 sessionWindow.Show();
                             }
                             catch (Exception winEx)
@@ -730,7 +832,7 @@ namespace VibeDesk
                         AppendLog("   1. Если ПК в одной квартире: проверьте, что оба в одной Wi-Fi сети.");
                         AppendLog("   2. На удаленном ПК нажмите кнопку '🛡️ Брандмауэр' для снятия блокировки Windows.");
                         AppendLog("   3. Если через интернет с VPN/Xray: прокси может фильтровать входящий UDP.");
-                        MessageBox.Show(this, $"Не удалось установить прямое соединение с удаленным ПК.\n\nПодробная диагностика выведена в журнале справа.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        VibeMessageBox.Show(this, $"Не удалось установить прямое соединение с удаленным ПК.\n\nПодробная диагностика выведена в журнале справа.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     return;
                 }
@@ -764,7 +866,8 @@ namespace VibeDesk
                     {
                         try
                         {
-                            var sessionWindow = new RemoteSessionWindow(directClient) { Owner = this };
+                            var sessionWindow = new RemoteSessionWindow(directClient, connectIp) { Owner = this };
+                            sessionWindow.Closed += (s, ev) => Dispatcher.InvokeAsync(LoadRecentConnections);
                             sessionWindow.Show();
                         }
                         catch (Exception winEx)
@@ -778,13 +881,13 @@ namespace VibeDesk
                     directClient.Dispose();
                     AppendLog($"❌ Не удалось подключиться к {connectIp}:{connectPort}.");
                     AppendLog("💡 Если ПК в одной локальной сети: нажмите на удаленном ПК кнопку '🛡️ Брандмауэр' в VibeDesk, чтобы разрешить входящие пакеты.");
-                    MessageBox.Show(this, $"Не удалось подключиться к {connectIp}:{connectPort}.\n\nУбедитесь, что на удаленном ПК в VibeDesk разрешен Брандмауэр.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    VibeMessageBox.Show(this, $"Не удалось подключиться к {connectIp}:{connectPort}.\n\nУбедитесь, что на удаленном ПК в VibeDesk разрешен Брандмауэр.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)
             {
                 AppendLog($"❌ Ошибка: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                MessageBox.Show(this, $"Ошибка: {ex.GetType().Name}: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Error);
+                VibeMessageBox.Show(this, $"Ошибка: {ex.GetType().Name}: {ex.Message}", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -866,7 +969,7 @@ namespace VibeDesk
                 if (ok)
                 {
                     AppendLog("✅ Правило для входящего UDP 15890 и VibeDesk успешно добавлено в Брандмауэр Windows!");
-                    MessageBox.Show(this, "Порт 15890 и приложение VibeDesk успешно разрешены в Брандмауэре Windows.\n\nТеперь другие компьютеры могут беспрепятственно подключаться к этому ПК.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                    VibeMessageBox.Show(this, "Порт 15890 и приложение VibeDesk успешно разрешены в Брандмауэре Windows.\n\nТеперь другие компьютеры могут беспрепятственно подключаться к этому ПК.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
@@ -944,7 +1047,7 @@ namespace VibeDesk
             try
             {
                 Clipboard.SetText(TxtClientLog.Text);
-                MessageBox.Show(this, "Журнал скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                VibeMessageBox.Show(this, "Журнал скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch { }
         }
@@ -959,7 +1062,7 @@ namespace VibeDesk
             try
             {
                 Clipboard.SetText(_myDeviceId);
-                MessageBox.Show(this, $"Ваш Vibe ID ({FormatId(_myDeviceId)}) скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                VibeMessageBox.Show(this, $"Ваш Vibe ID ({FormatId(_myDeviceId)}) скопирован в буфер обмена!", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch { }
         }
@@ -985,6 +1088,51 @@ namespace VibeDesk
 
             ListRecentConnections.ItemsSource = _recentConnections;
             RefreshRecentVisibility();
+
+            // Run availability checks in the background (LAN broadcast + MQTT signaling)
+            _ = CheckRecentAvailabilityAsync();
+        }
+
+        private async Task CheckRecentAvailabilityAsync()
+        {
+            var items = _recentConnections.ToList();
+            if (items.Count == 0) return;
+
+            foreach (var item in items)
+            {
+                try
+                {
+                    // 1. Fast LAN Discovery probe (UDP broadcast, 500ms)
+                    var lanEp = await LanDiscovery.DiscoverHostAsync(item.DeviceId, _myLocalIp, timeoutMs: 500);
+                    if (lanEp != null)
+                    {
+                        Dispatcher.Invoke(() => item.IsOnline = true);
+                        continue;
+                    }
+
+                    // 2. Global Signaling probe via MQTT if connected
+                    if (_signaling != null && _signaling.IsConnected)
+                    {
+                        var probeClientInfo = new PeerEndpointInfo
+                        {
+                            DeviceId = _myDeviceId,
+                            LocalIp = _myLocalIp,
+                            LocalPort = VibeClient.DefaultClientPort
+                        };
+
+                        var hostInfo = await _signaling.RequestHostEndpointsAsync(item.DeviceId, probeClientInfo, timeoutMs: 1500);
+                        Dispatcher.Invoke(() => item.IsOnline = (hostInfo != null));
+                    }
+                    else
+                    {
+                        Dispatcher.Invoke(() => item.IsOnline = false);
+                    }
+                }
+                catch
+                {
+                    Dispatcher.Invoke(() => item.IsOnline = false);
+                }
+            }
         }
 
         private void SaveRecentConnections()
@@ -1007,6 +1155,8 @@ namespace VibeDesk
             if (existing != null)
             {
                 existing.LastConnected = DateTime.Now;
+                existing.IsOnline = true;
+                existing.NotifyThumbnailChanged();
                 // Move to top
                 _recentConnections.Remove(existing);
                 _recentConnections.Insert(0, existing);
@@ -1016,7 +1166,8 @@ namespace VibeDesk
                 _recentConnections.Insert(0, new RecentConnection
                 {
                     DeviceId = deviceId,
-                    LastConnected = DateTime.Now
+                    LastConnected = DateTime.Now,
+                    IsOnline = true
                 });
                 // Keep max 10
                 while (_recentConnections.Count > 10)
@@ -1034,31 +1185,51 @@ namespace VibeDesk
             ListRecentConnections.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void ListRecentConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void ListRecentConnections_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ListRecentConnections.SelectedItem is RecentConnection rc)
             {
-                TxtRemoteAddress.Text = rc.DeviceId;
-                // Deselect so it can be re-clicked
+                string deviceId = rc.DeviceId;
                 ListRecentConnections.SelectedItem = null;
+                TxtRemoteAddress.Text = deviceId;
+                await ConnectToTargetAsync(deviceId);
             }
         }
 
-        private void ListRecentConnections_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private async void ListRecentConnections_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var dep = e.OriginalSource as DependencyObject;
+            while (dep != null && dep is not ListBoxItem)
+            {
+                dep = VisualTreeHelper.GetParent(dep);
+            }
+
+            if (dep is ListBoxItem item && item.DataContext is RecentConnection rc)
+            {
+                e.Handled = true;
+                ListRecentConnections.SelectedItem = null;
+                TxtRemoteAddress.Text = rc.DeviceId;
+                await ConnectToTargetAsync(rc.DeviceId);
+            }
+        }
+
+        private async void ListRecentConnections_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (ListRecentConnections.SelectedItem is RecentConnection rc)
             {
-                TxtRemoteAddress.Text = rc.DeviceId;
+                string deviceId = rc.DeviceId;
                 ListRecentConnections.SelectedItem = null;
-                BtnConnect_Click(sender, e);
+                TxtRemoteAddress.Text = deviceId;
+                await ConnectToTargetAsync(deviceId);
             }
         }
 
-        private void TxtRemoteAddress_KeyDown(object sender, KeyEventArgs e)
+        private async void TxtRemoteAddress_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
-                BtnConnect_Click(sender, e);
+                string target = TxtRemoteAddress.Text.Trim().Replace(" ", "");
+                await ConnectToTargetAsync(target);
             }
         }
 
@@ -1104,18 +1275,18 @@ namespace VibeDesk
                 else if (!string.IsNullOrEmpty(info.ErrorMessage))
                 {
                     AppendLog($"⚠️ {info.ErrorMessage}");
-                    MessageBox.Show(this, info.ErrorMessage, "Проверка обновлений", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    VibeMessageBox.Show(this, info.ErrorMessage, "Проверка обновлений", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 else
                 {
                     AppendLog($"✅ У вас установлена актуальная версия ({AppVersion.FullTitle}).");
-                    MessageBox.Show(this, $"У вас установлена последняя версия ({AppVersion.FullTitle})!", "Обновления", MessageBoxButton.OK, MessageBoxImage.Information);
+                    VibeMessageBox.Show(this, $"У вас установлена последняя версия ({AppVersion.FullTitle})!", "Обновления", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
             {
                 AppendLog($"❌ Ошибка проверки обновлений: {ex.Message}");
-                MessageBox.Show(this, $"Не удалось проверить обновления: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                VibeMessageBox.Show(this, $"Не удалось проверить обновления: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -1127,7 +1298,7 @@ namespace VibeDesk
         {
             if (_latestUpdateInfo == null || string.IsNullOrEmpty(_latestUpdateInfo.DownloadUrl))
             {
-                MessageBox.Show(this, "Ссылка на скачивание файла релиза не найдена.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                VibeMessageBox.Show(this, "Ссылка на скачивание файла релиза не найдена.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -1161,7 +1332,7 @@ namespace VibeDesk
                 PbUpdateProgress.Visibility = Visibility.Collapsed;
                 TxtUpdateStatus.Text = $"Ошибка загрузки: {ex.Message}";
                 AppendLog($"❌ Ошибка загрузки обновления: {ex.Message}");
-                MessageBox.Show(this, $"Ошибка загрузки обновления: {ex.Message}\n\nВы также можете скачать файл вручную, нажав кнопку «🌐 Скачать с сайта».", "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Error);
+                VibeMessageBox.Show(this, $"Ошибка загрузки обновления: {ex.Message}\n\nВы также можете скачать файл вручную, нажав кнопку «🌐 Скачать с сайта».", "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1183,7 +1354,7 @@ namespace VibeDesk
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Не удалось открыть браузер: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                VibeMessageBox.Show(this, $"Не удалось открыть браузер: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

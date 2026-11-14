@@ -16,11 +16,10 @@ namespace VibeDesk.Capture
         private readonly ImageCodecInfo _jpegCodec;
         private readonly EncoderParameters _encoderParams;
         private readonly MemoryStream _compressionStream = new(1024 * 256);
+        private readonly MemoryStream[] _stripStreams = new MemoryStream[StripCount];
 
         private Bitmap? _workBitmap;
         private Graphics? _workGraphics;
-        private Bitmap? _stripBitmap;
-        private Graphics? _stripGraphics;
 
         private readonly ulong[] _stripHashes = new ulong[StripCount];
         private int _forceSweepIndex = 0;
@@ -36,6 +35,11 @@ namespace VibeDesk.Capture
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
             _encoderParams = new EncoderParameters(1);
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(jpegQuality, 10, 100));
+
+            for (int i = 0; i < StripCount; i++)
+            {
+                _stripStreams[i] = new MemoryStream(1024 * 128);
+            }
 
             var dxgi = new DxgiScreenCapture();
             if (dxgi.Initialize())
@@ -100,30 +104,32 @@ namespace VibeDesk.Capture
             int targetH = Math.Max(StripCount * 8, ((int)(bmp.Height * ResolutionScale)) / StripCount * StripCount);
             int stripH = targetH / StripCount;
 
-            if (_workBitmap == null || _workBitmap.Width != targetW || _workBitmap.Height != targetH)
-            {
-                _workGraphics?.Dispose();
-                _workBitmap?.Dispose();
-                _workBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
-                _workGraphics = Graphics.FromImage(_workBitmap);
-                _workGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                _workGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
-                _workGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-                _workGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
-                _workGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-                Array.Clear(_stripHashes, 0, _stripHashes.Length);
-            }
+            bool isFullScale = Math.Abs(ResolutionScale - 1.0f) < 0.01f && bmp.Width == targetW && bmp.Height == targetH;
+            Bitmap sourceBmp;
 
-            if (_stripBitmap == null || _stripBitmap.Width != targetW || _stripBitmap.Height != stripH)
+            if (isFullScale)
             {
-                _stripGraphics?.Dispose();
-                _stripBitmap?.Dispose();
-                _stripBitmap = new Bitmap(targetW, stripH, PixelFormat.Format32bppRgb);
-                _stripGraphics = Graphics.FromImage(_stripBitmap);
-                _stripGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                sourceBmp = bmp;
             }
+            else
+            {
+                if (_workBitmap == null || _workBitmap.Width != targetW || _workBitmap.Height != targetH)
+                {
+                    _workGraphics?.Dispose();
+                    _workBitmap?.Dispose();
+                    _workBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
+                    _workGraphics = Graphics.FromImage(_workBitmap);
+                    _workGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    _workGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+                    _workGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                    _workGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                    _workGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+                    Array.Clear(_stripHashes, 0, _stripHashes.Length);
+                }
 
-            _workGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+                _workGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+                sourceBmp = _workBitmap;
+            }
 
             var dirtyList = new List<byte[]>(StripCount);
 
@@ -131,8 +137,9 @@ namespace VibeDesk.Capture
             int sweepStrip = _forceSweepIndex;
             _forceSweepIndex = (_forceSweepIndex + 1) % StripCount;
 
-            BitmapData fullData = _workBitmap.LockBits(new Rectangle(0, 0, targetW, targetH), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+            BitmapData fullData = sourceBmp.LockBits(new Rectangle(0, 0, targetW, targetH), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
             bool[] isStripDirty = new bool[StripCount];
+            byte[]?[] stripResults = new byte[]?[StripCount];
 
             try
             {
@@ -160,25 +167,38 @@ namespace VibeDesk.Capture
                         isStripDirty[s] = true;
                     }
                 }
+
+                // Этап 1 & 2: Многопоточное сжатие независимых полос со срезом памяти без промежуточных Graphics.DrawImage
+                Parallel.For(0, StripCount, s =>
+                {
+                    if (!isStripDirty[s]) return;
+
+                    int startY = s * stripH;
+                    IntPtr sliceScan0 = (IntPtr)(basePtr + startY * stride);
+                    using var sliceBmp = new Bitmap(targetW, stripH, stride, PixelFormat.Format32bppRgb, sliceScan0);
+
+                    var stream = _stripStreams[s];
+                    lock (stream)
+                    {
+                        stream.SetLength(0);
+                        stream.WriteByte((byte)s);
+                        stream.WriteByte((byte)StripCount);
+                        sliceBmp.Save(stream, _jpegCodec, _encoderParams);
+                        stripResults[s] = stream.ToArray();
+                    }
+                });
             }
             finally
             {
-                _workBitmap.UnlockBits(fullData);
+                sourceBmp.UnlockBits(fullData);
             }
 
             for (int s = 0; s < StripCount; s++)
             {
-                if (!isStripDirty[s]) continue;
-
-                int startY = s * stripH;
-                _stripGraphics!.DrawImage(_workBitmap, new Rectangle(0, 0, targetW, stripH), new Rectangle(0, startY, targetW, stripH), GraphicsUnit.Pixel);
-
-                _compressionStream.SetLength(0);
-                _compressionStream.WriteByte((byte)s);
-                _compressionStream.WriteByte((byte)StripCount);
-
-                _stripBitmap.Save(_compressionStream, _jpegCodec, _encoderParams);
-                dirtyList.Add(_compressionStream.ToArray());
+                if (stripResults[s] != null)
+                {
+                    dirtyList.Add(stripResults[s]!);
+                }
             }
 
             return dirtyList;
@@ -227,13 +247,15 @@ namespace VibeDesk.Capture
 
         public void Dispose()
         {
-            _stripGraphics?.Dispose();
-            _stripBitmap?.Dispose();
             _workGraphics?.Dispose();
             _workBitmap?.Dispose();
             _capturer.Dispose();
             _encoderParams.Dispose();
             _compressionStream.Dispose();
+            for (int i = 0; i < StripCount; i++)
+            {
+                _stripStreams[i]?.Dispose();
+            }
         }
     }
 }

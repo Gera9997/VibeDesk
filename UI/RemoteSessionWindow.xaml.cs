@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
@@ -44,10 +45,14 @@ namespace VibeDesk.UI
 
         private readonly ConcurrentQueue<DecodedStrip> _decodedQueue = new();
         private int _uiUpdateScheduled = 0;
+        private readonly string? _remoteDeviceId;
+        private int _renderedStripsCount = 0;
+        private bool _hasSavedInitialThumbnail = false;
 
-        public RemoteSessionWindow(VibeClient client)
+        public RemoteSessionWindow(VibeClient client, string? remoteDeviceId = null)
         {
             _client = client;
+            _remoteDeviceId = remoteDeviceId;
             InitializeComponent();
 
             _client.OnFrameReceived += OnFrameReceived;
@@ -73,6 +78,7 @@ namespace VibeDesk.UI
 
             Closed += (s, e) =>
             {
+                SaveThumbnail();
                 _renderRunning = false;
                 _frameSignal.Set();
                 _statsTimer.Stop();
@@ -135,13 +141,17 @@ namespace VibeDesk.UI
                         int w = converted.PixelWidth;
                         int h = converted.PixelHeight;
                         int stride = w * 4;
-                        byte[] pixels = new byte[stride * h];
+                        int bufferSize = stride * h;
+                        byte[] pixels = ArrayPool<byte>.Shared.Rent(bufferSize);
                         converted.CopyPixels(pixels, stride, 0);
 
-                        // Защита от накопления очереди в случае подвисания окна
+                        // Защита от накопления очереди в случае подвисания окна: возвращаем буферы в пул
                         while (_decodedQueue.Count > 16)
                         {
-                            _decodedQueue.TryDequeue(out _);
+                            if (_decodedQueue.TryDequeue(out var stale))
+                            {
+                                ArrayPool<byte>.Shared.Return(stale.Pixels);
+                            }
                         }
 
                         _decodedQueue.Enqueue(new DecodedStrip
@@ -171,31 +181,45 @@ namespace VibeDesk.UI
             {
                 while (_decodedQueue.TryDequeue(out var strip))
                 {
-                    int fullW = strip.Width;
-                    int fullH = strip.Height * strip.TotalStrips;
-
-                    if (_canvasBitmap == null || _canvasW != fullW || _canvasH != fullH)
+                    try
                     {
-                        _canvasW = fullW;
-                        _canvasH = fullH;
-                        _canvasBitmap = new WriteableBitmap(fullW, fullH, 96, 96, PixelFormats.Bgr32, null);
-                        ImgScreen.Source = _canvasBitmap;
+                        int fullW = strip.Width;
+                        int fullH = strip.Height * strip.TotalStrips;
+
+                        if (_canvasBitmap == null || _canvasW != fullW || _canvasH != fullH)
+                        {
+                            _canvasW = fullW;
+                            _canvasH = fullH;
+                            _canvasBitmap = new WriteableBitmap(fullW, fullH, 96, 96, PixelFormats.Bgr32, null);
+                            ImgScreen.Source = _canvasBitmap;
+                        }
+
+                        int destY = strip.StripIndex * strip.Height;
+                        if (destY + strip.Height <= _canvasH)
+                        {
+                            _canvasBitmap.WritePixels(
+                                new Int32Rect(0, destY, strip.Width, strip.Height),
+                                strip.Pixels,
+                                strip.Stride,
+                                0);
+                        }
                     }
-
-                    int destY = strip.StripIndex * strip.Height;
-                    if (destY + strip.Height <= _canvasH)
+                    finally
                     {
-                        _canvasBitmap.WritePixels(
-                            new Int32Rect(0, destY, strip.Width, strip.Height),
-                            strip.Pixels,
-                            strip.Stride,
-                            0);
+                        ArrayPool<byte>.Shared.Return(strip.Pixels);
                     }
                 }
 
                 if (OverlayConnecting.Visibility == Visibility.Visible && _canvasBitmap != null)
                 {
                     OverlayConnecting.Visibility = Visibility.Collapsed;
+                }
+
+                _renderedStripsCount++;
+                if (!_hasSavedInitialThumbnail && _renderedStripsCount >= 10 && _canvasBitmap != null)
+                {
+                    _hasSavedInitialThumbnail = true;
+                    SaveThumbnail();
                 }
             }
             finally
@@ -208,11 +232,39 @@ namespace VibeDesk.UI
             }
         }
 
+        public void SaveThumbnail()
+        {
+            if (string.IsNullOrWhiteSpace(_remoteDeviceId) || _canvasBitmap == null) return;
+            try
+            {
+                string thumbDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "thumbnails");
+                System.IO.Directory.CreateDirectory(thumbDir);
+                string thumbPath = System.IO.Path.Combine(thumbDir, $"{_remoteDeviceId}.jpg");
+
+                int targetW = 320;
+                int targetH = 180;
+                var rtb = new RenderTargetBitmap(targetW, targetH, 96, 96, PixelFormats.Pbgra32);
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawImage(_canvasBitmap, new Rect(0, 0, targetW, targetH));
+                }
+                rtb.Render(dv);
+
+                var encoder = new JpegBitmapEncoder { QualityLevel = 75 };
+                encoder.Frames.Add(BitmapFrame.Create(rtb));
+                using var fs = new System.IO.FileStream(thumbPath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None);
+                encoder.Save(fs);
+            }
+            catch { }
+        }
+
         private void OnDisconnected()
         {
             Dispatcher.InvokeAsync(() =>
             {
-                MessageBox.Show(this, "Сеанс удаленного доступа завершен.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                SaveThumbnail();
+                VibeMessageBox.Show(this, "Сеанс удаленного доступа завершен.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
                 Close();
             });
         }
