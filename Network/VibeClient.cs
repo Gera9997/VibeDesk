@@ -396,6 +396,15 @@ namespace VibeDesk.Network
             }
         }
 
+        public void SendMouseRelative(int deltaX, int deltaY)
+        {
+            if (IsConnected)
+            {
+                byte[] packet = PacketBuilder.CreateMouseRelative(deltaX, deltaY);
+                _serverPeer!.Send(packet, DeliveryMethod.Unreliable);
+            }
+        }
+
         public void SendMouseButton(VibeMouseButton button, bool isDown)
         {
             if (IsConnected)

@@ -115,6 +115,16 @@ namespace VibeDesk.Network.Protocol
             return packet;
         }
 
+        public static byte[] CreateMouseRelative(int deltaX, int deltaY)
+        {
+            byte[] packet = new byte[6];
+            packet[0] = (byte)PacketType.InputEvent;
+            packet[1] = (byte)InputEventType.MouseRelative;
+            BitConverter.TryWriteBytes(packet.AsSpan(2, 2), (short)Math.Clamp(deltaX, short.MinValue, short.MaxValue));
+            BitConverter.TryWriteBytes(packet.AsSpan(4, 2), (short)Math.Clamp(deltaY, short.MinValue, short.MaxValue));
+            return packet;
+        }
+
         public static byte[] CreateMouseButton(VibeMouseButton button, bool isDown)
         {
             return new byte[]

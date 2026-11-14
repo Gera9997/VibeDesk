@@ -611,6 +611,15 @@ namespace VibeDesk.Network
                     }
                     break;
 
+                case InputEventType.MouseRelative:
+                    if (reader.AvailableBytes >= 4)
+                    {
+                        short dx = reader.GetShort();
+                        short dy = reader.GetShort();
+                        InputSimulator.SendMouseRelative(dx, dy);
+                    }
+                    break;
+
                 case InputEventType.MouseDown:
                     if (reader.AvailableBytes >= 1)
                     {

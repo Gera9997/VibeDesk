@@ -12,8 +12,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using VibeDesk.Capture;
 using VibeDesk.Input;
+using VibeDesk.Native;
 using VibeDesk.Network;
 
 namespace VibeDesk.UI
@@ -26,6 +29,13 @@ namespace VibeDesk.UI
         private bool _isFullscreen = false;
         private WindowStyle _previousStyle = WindowStyle.SingleBorderWindow;
         private WindowState _previousState = WindowState.Normal;
+
+        private bool _isGameModeActive = false;
+        private IntPtr _windowHandle = IntPtr.Zero;
+        private HwndSource? _hwndSource = null;
+        private Win32.LowLevelKeyboardProc? _keyboardHookProc = null;
+        private IntPtr _keyboardHookHandle = IntPtr.Zero;
+        private bool _isRawInputRegistered = false;
 
         // Хранит только самый последний полученный пакет для каждой из 8 полос
         private readonly byte[]?[] _latestStripBytes = new byte[]?[ScreenCaptureManager.StripCount];
@@ -111,8 +121,59 @@ namespace VibeDesk.UI
             _statsTimer.Tick += (s, e) => UpdateStats();
             _statsTimer.Start();
 
+            Loaded += (s, e) =>
+            {
+                try
+                {
+                    _windowHandle = new WindowInteropHelper(this).EnsureHandle();
+                    _hwndSource = HwndSource.FromHwnd(_windowHandle);
+                    _hwndSource?.AddHook(WndProc);
+                    InstallKeyboardHook();
+                }
+                catch { }
+            };
+
+            Activated += (s, e) =>
+            {
+                if (_isGameModeActive)
+                {
+                    UpdateClipCursor();
+                }
+            };
+
+            Deactivated += (s, e) =>
+            {
+                if (_isGameModeActive)
+                {
+                    Win32.ClipCursor(IntPtr.Zero);
+                }
+            };
+
+            SizeChanged += (s, e) =>
+            {
+                if (_isGameModeActive)
+                {
+                    UpdateClipCursor();
+                }
+            };
+
+            LocationChanged += (s, e) =>
+            {
+                if (_isGameModeActive)
+                {
+                    UpdateClipCursor();
+                }
+            };
+
             Closed += (s, e) =>
             {
+                DisableGameMode();
+                UninstallKeyboardHook();
+                try
+                {
+                    _hwndSource?.RemoveHook(WndProc);
+                }
+                catch { }
                 SaveThumbnail();
                 _renderRunning = false;
                 _frameSignal.Set();
@@ -698,6 +759,12 @@ namespace VibeDesk.UI
 
         private void ImgScreen_MouseMove(object sender, MouseEventArgs e)
         {
+            if (_isGameModeActive)
+            {
+                // В игровом режиме относительные движения обрабатываются напрямую через Raw Input (WM_INPUT)
+                return;
+            }
+
             if (_isRemoteCursorVisible)
             {
                 if (ImgScreen.Cursor != Cursors.Arrow)
@@ -724,6 +791,8 @@ namespace VibeDesk.UI
 
         private void ImgScreen_MouseLeave(object sender, MouseEventArgs e)
         {
+            if (_isGameModeActive) return;
+
             if (_isRemoteCursorVisible)
             {
                 RemoteCursor.Visibility = Visibility.Visible;
@@ -733,12 +802,15 @@ namespace VibeDesk.UI
         private void ImgScreen_MouseDown(object sender, MouseButtonEventArgs e)
         {
             ImgScreen.Focus();
-            ImgScreen.CaptureMouse();
-
-            var coords = GetNormalizedCoordinates(e);
-            if (coords.HasValue)
+            if (!_isGameModeActive)
             {
-                _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+                ImgScreen.CaptureMouse();
+
+                var coords = GetNormalizedCoordinates(e);
+                if (coords.HasValue)
+                {
+                    _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+                }
             }
 
             VibeMouseButton? btn = e.ChangedButton switch
@@ -746,6 +818,8 @@ namespace VibeDesk.UI
                 MouseButton.Left => VibeMouseButton.Left,
                 MouseButton.Right => VibeMouseButton.Right,
                 MouseButton.Middle => VibeMouseButton.Middle,
+                MouseButton.XButton1 => VibeMouseButton.XButton1,
+                MouseButton.XButton2 => VibeMouseButton.XButton2,
                 _ => null
             };
             if (btn.HasValue)
@@ -762,10 +836,13 @@ namespace VibeDesk.UI
                 ImgScreen.ReleaseMouseCapture();
             }
 
-            var coords = GetNormalizedCoordinates(e);
-            if (coords.HasValue)
+            if (!_isGameModeActive)
             {
-                _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+                var coords = GetNormalizedCoordinates(e);
+                if (coords.HasValue)
+                {
+                    _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+                }
             }
 
             VibeMouseButton? btn = e.ChangedButton switch
@@ -773,6 +850,8 @@ namespace VibeDesk.UI
                 MouseButton.Left => VibeMouseButton.Left,
                 MouseButton.Right => VibeMouseButton.Right,
                 MouseButton.Middle => VibeMouseButton.Middle,
+                MouseButton.XButton1 => VibeMouseButton.XButton1,
+                MouseButton.XButton2 => VibeMouseButton.XButton2,
                 _ => null
             };
             if (btn.HasValue)
@@ -897,6 +976,230 @@ namespace VibeDesk.UI
                 }
             }
             catch { }
+        }
+
+        private void BtnGameMode_Click(object sender, RoutedEventArgs e) => ToggleGameMode();
+
+        public void ToggleGameMode()
+        {
+            if (_isGameModeActive)
+            {
+                DisableGameMode();
+            }
+            else
+            {
+                EnableGameMode();
+            }
+        }
+
+        private void EnableGameMode()
+        {
+            _isGameModeActive = true;
+            BtnGameMode.Content = "🎮 Захвачен (Ctrl+Alt+G)";
+            BtnGameMode.Background = new SolidColorBrush(Color.FromRgb(46, 125, 50));
+            ImgScreen.Cursor = Cursors.None;
+            RemoteCursor.Visibility = Visibility.Collapsed;
+
+            RegisterRawInput();
+            UpdateClipCursor();
+        }
+
+        private void DisableGameMode()
+        {
+            _isGameModeActive = false;
+            BtnGameMode.Content = "🎮 Захват мыши";
+            BtnGameMode.ClearValue(BackgroundProperty);
+
+            Win32.ClipCursor(IntPtr.Zero);
+            ImgScreen.Cursor = _isRemoteCursorVisible ? Cursors.Arrow : Cursors.None;
+
+            UnregisterRawInput();
+        }
+
+        private void UpdateClipCursor()
+        {
+            try
+            {
+                if (!_isGameModeActive || !IsActive || ImgScreen.ActualWidth <= 0 || ImgScreen.ActualHeight <= 0) return;
+
+                Point topLeft = ImgScreen.PointToScreen(new Point(0, 0));
+                Point botRight = ImgScreen.PointToScreen(new Point(ImgScreen.ActualWidth, ImgScreen.ActualHeight));
+                var rect = new Win32.RECT((int)topLeft.X, (int)topLeft.Y, (int)botRight.X, (int)botRight.Y);
+                Win32.ClipCursor(ref rect);
+
+                int cx = (int)(topLeft.X + ImgScreen.ActualWidth / 2);
+                int cy = (int)(topLeft.Y + ImgScreen.ActualHeight / 2);
+                Win32.SetCursorPos(cx, cy);
+            }
+            catch { }
+        }
+
+        private void RegisterRawInput()
+        {
+            if (_isRawInputRegistered || _windowHandle == IntPtr.Zero) return;
+
+            try
+            {
+                var rid = new Win32.RAWINPUTDEVICE[1];
+                rid[0].usUsagePage = 0x01; // HID_USAGE_PAGE_GENERIC
+                rid[0].usUsage = 0x02;     // HID_USAGE_GENERIC_MOUSE
+                rid[0].dwFlags = Win32.RIDEV_INPUTSINK;
+                rid[0].hwndTarget = _windowHandle;
+
+                if (Win32.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<Win32.RAWINPUTDEVICE>()))
+                {
+                    _isRawInputRegistered = true;
+                }
+            }
+            catch { }
+        }
+
+        private void UnregisterRawInput()
+        {
+            if (!_isRawInputRegistered || _windowHandle == IntPtr.Zero) return;
+
+            try
+            {
+                var rid = new Win32.RAWINPUTDEVICE[1];
+                rid[0].usUsagePage = 0x01;
+                rid[0].usUsage = 0x02;
+                rid[0].dwFlags = Win32.RIDEV_REMOVE;
+                rid[0].hwndTarget = IntPtr.Zero;
+
+                Win32.RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf<Win32.RAWINPUTDEVICE>());
+                _isRawInputRegistered = false;
+            }
+            catch { }
+        }
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == Win32.WM_INPUT && _isGameModeActive)
+            {
+                uint size = 0;
+                Win32.GetRawInputData(lParam, Win32.RID_INPUT, IntPtr.Zero, ref size, (uint)Marshal.SizeOf<Win32.RAWINPUTHEADER>());
+                if (size > 0)
+                {
+                    IntPtr buffer = Marshal.AllocHGlobal((int)size);
+                    try
+                    {
+                        if (Win32.GetRawInputData(lParam, Win32.RID_INPUT, buffer, ref size, (uint)Marshal.SizeOf<Win32.RAWINPUTHEADER>()) == size)
+                        {
+                            var raw = Marshal.PtrToStructure<Win32.RAWINPUT>(buffer);
+                            if (raw.header.dwType == 0) // RIM_TYPEMOUSE
+                            {
+                                int dx = raw.mouse.lLastX;
+                                int dy = raw.mouse.lLastY;
+                                if (dx != 0 || dy != 0)
+                                {
+                                    _client.SendMouseRelative(dx, dy);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+
+        private void InstallKeyboardHook()
+        {
+            try
+            {
+                if (_keyboardHookHandle != IntPtr.Zero) return;
+
+                _keyboardHookProc = LowLevelKeyboardCallback;
+                using var curProcess = Process.GetCurrentProcess();
+                using var curModule = curProcess.MainModule;
+                IntPtr hMod = Win32.GetModuleHandle(curModule?.ModuleName);
+                _keyboardHookHandle = Win32.SetWindowsHookEx(Win32.WH_KEYBOARD_LL, _keyboardHookProc, hMod, 0);
+            }
+            catch { }
+        }
+
+        private void UninstallKeyboardHook()
+        {
+            try
+            {
+                if (_keyboardHookHandle != IntPtr.Zero)
+                {
+                    Win32.UnhookWindowsHookEx(_keyboardHookHandle);
+                    _keyboardHookHandle = IntPtr.Zero;
+                    _keyboardHookProc = null;
+                }
+            }
+            catch { }
+        }
+
+        private IntPtr LowLevelKeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && _windowHandle != IntPtr.Zero && Win32.GetForegroundWindow() == _windowHandle)
+            {
+                var kb = Marshal.PtrToStructure<Win32.KBDLLHOOKSTRUCT>(lParam);
+                int msg = wParam.ToInt32();
+                bool isDown = (msg == Win32.WM_KEYDOWN || msg == Win32.WM_SYSKEYDOWN);
+
+                bool isCtrl = (Win32.GetKeyState(0x11) & 0x8000) != 0; // VK_CONTROL
+                bool isAlt = (Win32.GetKeyState(0x12) & 0x8000) != 0;  // VK_MENU
+
+                // Emergency escape / Game Mode Toggle: Ctrl + Alt + G
+                if (isCtrl && isAlt && (kb.vkCode == 0x47)) // 'G' = 0x47
+                {
+                    if (isDown)
+                    {
+                        Dispatcher.InvokeAsync(ToggleGameMode);
+                    }
+                    return (IntPtr)1; // Suppress local processing
+                }
+
+                // Intercept Windows Key (LWIN = 0x5B, RWIN = 0x5C)
+                if (kb.vkCode == Win32.VK_LWIN || kb.vkCode == Win32.VK_RWIN)
+                {
+                    _client.SendKey((ushort)kb.vkCode, isDown);
+                    return (IntPtr)1; // Suppress local Windows Start Menu!
+                }
+
+                // Intercept Alt+Tab
+                if (kb.vkCode == Win32.VK_TAB && isAlt)
+                {
+                    _client.SendKey((ushort)Win32.VK_TAB, isDown);
+                    return (IntPtr)1; // Suppress local Alt+Tab switcher!
+                }
+
+                // Intercept CapsLock (VK_CAPITAL = 0x14)
+                if (kb.vkCode == Win32.VK_CAPITAL)
+                {
+                    _client.SendKey((ushort)Win32.VK_CAPITAL, isDown);
+                    return (IntPtr)1; // Suppress local CapsLock toggle so states stay in sync
+                }
+
+                // In Game Mode, forward all keys directly to ensure no lag and full game response
+                if (_isGameModeActive)
+                {
+                    // Allow F11 for fullscreen toggle
+                    if (kb.vkCode == 0x7A) // VK_F11
+                    {
+                        if (isDown) Dispatcher.InvokeAsync(ToggleFullscreen);
+                        return (IntPtr)1;
+                    }
+                    // Allow F3 for perf timings drawer
+                    if (kb.vkCode == 0x72) // VK_F3
+                    {
+                        if (isDown) Dispatcher.InvokeAsync(() => BtnTogglePerfDrawer_Click(this, new RoutedEventArgs()));
+                        return (IntPtr)1;
+                    }
+
+                    _client.SendKey((ushort)kb.vkCode, isDown);
+                    return (IntPtr)1; // Suppress local WPF / OS handling so game gets pure keys
+                }
+            }
+
+            return Win32.CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
         }
     }
 }

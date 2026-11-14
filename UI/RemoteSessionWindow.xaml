@@ -67,6 +67,7 @@
                     <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер обмена" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Ctrl+Shift+Esc" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Win-Key" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows"/>
+                    <Button x:Name="BtnGameMode" Style="{StaticResource HeaderBtn}" Content="🎮 Захват мыши" Click="BtnGameMode_Click" ToolTip="Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="⛶ Полный экран" Click="BtnFullscreen_Click"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="✕ Отключиться" Background="#8A1C1C" Click="BtnDisconnect_Click"/>
                 </StackPanel>

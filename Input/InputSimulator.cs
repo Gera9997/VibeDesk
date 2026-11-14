@@ -11,18 +11,39 @@ namespace VibeDesk.Input
         MouseUp = 3,
         MouseWheel = 4,
         KeyDown = 5,
-        KeyUp = 6
+        KeyUp = 6,
+        MouseRelative = 7
     }
 
     public enum VibeMouseButton : byte
     {
         Left = 1,
         Right = 2,
-        Middle = 3
+        Middle = 3,
+        XButton1 = 4,
+        XButton2 = 5
     }
 
     public static class InputSimulator
     {
+        public static void SendMouseRelative(int deltaX, int deltaY)
+        {
+            var input = new Win32.INPUT
+            {
+                type = Win32.INPUT_MOUSE,
+                u = new Win32.InputUnion
+                {
+                    mi = new Win32.MOUSEINPUT
+                    {
+                        dx = deltaX,
+                        dy = deltaY,
+                        dwFlags = Win32.MOUSEEVENTF_MOVE // Relative motion for 3D games and camera rotation
+                    }
+                }
+            };
+
+            Win32.SendInput(1, new[] { input }, Marshal.SizeOf<Win32.INPUT>());
+        }
         public static void SendMouseMove(double normX, double normY)
         {
             // Normalize to 0 .. 65535 coordinate space
@@ -52,6 +73,7 @@ namespace VibeDesk.Input
         public static void SendMouseButton(VibeMouseButton button, bool isDown)
         {
             uint flag = 0;
+            uint mouseData = 0;
             switch (button)
             {
                 case VibeMouseButton.Left:
@@ -62,6 +84,14 @@ namespace VibeDesk.Input
                     break;
                 case VibeMouseButton.Middle:
                     flag = isDown ? Win32.MOUSEEVENTF_MIDDLEDOWN : Win32.MOUSEEVENTF_MIDDLEUP;
+                    break;
+                case VibeMouseButton.XButton1:
+                    flag = isDown ? Win32.MOUSEEVENTF_XDOWN : Win32.MOUSEEVENTF_XUP;
+                    mouseData = Win32.XBUTTON1;
+                    break;
+                case VibeMouseButton.XButton2:
+                    flag = isDown ? Win32.MOUSEEVENTF_XDOWN : Win32.MOUSEEVENTF_XUP;
+                    mouseData = Win32.XBUTTON2;
                     break;
             }
 
@@ -74,7 +104,8 @@ namespace VibeDesk.Input
                 {
                     mi = new Win32.MOUSEINPUT
                     {
-                        dwFlags = flag
+                        dwFlags = flag,
+                        mouseData = mouseData
                     }
                 }
             };
