@@ -74,6 +74,7 @@ namespace VibeDesk.UI
         private readonly string? _remoteDeviceId;
         private int _renderedStripsCount = 0;
         private bool _hasSavedInitialThumbnail = false;
+        private bool _isRemoteCursorVisible = true;
 
         public RemoteSessionWindow(VibeClient client, string? remoteDeviceId = null)
         {
@@ -641,21 +642,46 @@ namespace VibeDesk.UI
         {
             Dispatcher.InvokeAsync(() =>
             {
+                _isRemoteCursorVisible = visible;
+
+                // Если на удаленной машине курсор скрыт (полноэкранная игра, видео и т.д.):
                 if (!visible)
                 {
+                    if (ImgScreen.Cursor != Cursors.None)
+                    {
+                        ImgScreen.Cursor = Cursors.None;
+                    }
                     RemoteCursor.Visibility = Visibility.Collapsed;
                     return;
                 }
 
-                int effectiveW = _stripeRenderer.CanvasWidth > 0 ? _stripeRenderer.CanvasWidth : _canvasW;
-                int effectiveH = _stripeRenderer.CanvasHeight > 0 ? _stripeRenderer.CanvasHeight : _canvasH;
+                // Когда курсор находится над экраном удаленной сессии:
+                // Используем локальный аппаратный курсор клиента (0 мс задержки, частота экрана 144/240Гц, без лагов!)
+                if (ImgScreen.IsMouseOver)
+                {
+                    if (ImgScreen.Cursor != Cursors.Arrow)
+                    {
+                        ImgScreen.Cursor = Cursors.Arrow;
+                    }
+                    RemoteCursor.Visibility = Visibility.Collapsed;
+                    return;
+                }
 
-                double scaleX = effectiveW > 0 && screenW > 0 ? (double)effectiveW / screenW : 1.0;
-                double scaleY = effectiveH > 0 && screenH > 0 ? (double)effectiveH / screenH : 1.0;
+                // Если курсор мыши вне окна сессии (например, в тулбаре):
+                // Показываем RemoteCursor, спроецированный в координаты Canvas с масштабом 1:1 (без увеличения Viewbox)
+                if (ImgScreen.ActualWidth > 0 && ImgScreen.ActualHeight > 0 && screenW > 0 && screenH > 0)
+                {
+                    double normX = Math.Clamp((double)x / screenW, 0.0, 1.0);
+                    double normY = Math.Clamp((double)y / screenH, 0.0, 1.0);
 
-                Canvas.SetLeft(RemoteCursor, x * scaleX);
-                Canvas.SetTop(RemoteCursor, y * scaleY);
-                RemoteCursor.Visibility = Visibility.Visible;
+                    Point ptOnScreen = ImgScreen.TranslatePoint(
+                        new Point(normX * ImgScreen.ActualWidth, normY * ImgScreen.ActualHeight),
+                        CursorCanvas);
+
+                    Canvas.SetLeft(RemoteCursor, ptOnScreen.X);
+                    Canvas.SetTop(RemoteCursor, ptOnScreen.Y);
+                    RemoteCursor.Visibility = Visibility.Visible;
+                }
             }, DispatcherPriority.Render);
         }
 
@@ -671,10 +697,22 @@ namespace VibeDesk.UI
 
         private void ImgScreen_MouseMove(object sender, MouseEventArgs e)
         {
-            if (ImgScreen.Cursor != Cursors.None)
+            if (_isRemoteCursorVisible)
             {
-                ImgScreen.Cursor = Cursors.None;
+                if (ImgScreen.Cursor != Cursors.Arrow)
+                {
+                    ImgScreen.Cursor = Cursors.Arrow;
+                }
             }
+            else
+            {
+                if (ImgScreen.Cursor != Cursors.None)
+                {
+                    ImgScreen.Cursor = Cursors.None;
+                }
+            }
+
+            RemoteCursor.Visibility = Visibility.Collapsed;
 
             var coords = GetNormalizedCoordinates(e);
             if (coords.HasValue)
@@ -683,9 +721,25 @@ namespace VibeDesk.UI
             }
         }
 
+        private void ImgScreen_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (_isRemoteCursorVisible)
+            {
+                RemoteCursor.Visibility = Visibility.Visible;
+            }
+        }
+
         private void ImgScreen_MouseDown(object sender, MouseButtonEventArgs e)
         {
             ImgScreen.Focus();
+            ImgScreen.CaptureMouse();
+
+            var coords = GetNormalizedCoordinates(e);
+            if (coords.HasValue)
+            {
+                _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+            }
+
             VibeMouseButton? btn = e.ChangedButton switch
             {
                 MouseButton.Left => VibeMouseButton.Left,
@@ -702,6 +756,17 @@ namespace VibeDesk.UI
 
         private void ImgScreen_MouseUp(object sender, MouseButtonEventArgs e)
         {
+            if (ImgScreen.IsMouseCaptured)
+            {
+                ImgScreen.ReleaseMouseCapture();
+            }
+
+            var coords = GetNormalizedCoordinates(e);
+            if (coords.HasValue)
+            {
+                _client.SendMouseMove(coords.Value.normX, coords.Value.normY);
+            }
+
             VibeMouseButton? btn = e.ChangedButton switch
             {
                 MouseButton.Left => VibeMouseButton.Left,

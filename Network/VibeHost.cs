@@ -345,6 +345,7 @@ namespace VibeDesk.Network
 
                                     byte[] cursorPacket = PacketBuilder.CreateCursorPosition(visible, curX, curY, ScreenWidth, ScreenHeight);
                                     peer.Send(cursorPacket, DeliveryMethod.Unreliable);
+                                    _netServer.TriggerUpdate();
                                 }
                             }
                         }
