@@ -63,6 +63,7 @@
                         <ComboBoxItem Content="⚡ 33% Эконом"/>
                     </ComboBox>
 
+                    <Button Style="{StaticResource HeaderBtn}" Content="📊 Тайминги" Click="BtnTogglePerfDrawer_Click" ToolTip="Открыть подробный лог таймингов этапов стрима (F3)"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер обмена" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Ctrl+Shift+Esc" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Win-Key" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows"/>
@@ -101,6 +102,42 @@
                     <ProgressBar IsIndeterminate="True" Width="200" Height="4" Foreground="#00E5FF" Background="#2A2A36" BorderThickness="0"/>
                     <TextBlock x:Name="TxtConnectingStatus" Text="Ожидание первого кадра..." Foreground="#A0A0B0" Margin="0,12,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
+            </Border>
+
+            <!-- Diagnostics Drawer -->
+            <Border x:Name="DrawerPerfLogs" Visibility="Collapsed"
+                    HorizontalAlignment="Right" VerticalAlignment="Stretch" Width="520"
+                    Background="#F0101016" BorderBrush="#353545" BorderThickness="1,0,0,0" Padding="14">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource HeaderBtn}" Content="✕" Width="26" Height="26" Padding="0" Click="BtnClosePerfDrawer_Click"/>
+                        <TextBlock Text="📊 Диагностика и тайминги видеопотока" Foreground="#F0EAE0" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+                    </DockPanel>
+
+                    <!-- Current Live Summary -->
+                    <Border Grid.Row="1" Background="#201C24" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+                        <TextBlock x:Name="TxtLiveSummary" Text="Сбор данных таймингов..." Foreground="#C2A878" FontSize="11" FontFamily="Consolas"/>
+                    </Border>
+
+                    <!-- Detailed Log Box -->
+                    <TextBox x:Name="TxtPerfLog" Grid.Row="2" IsReadOnly="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             Background="#0D0D12" Foreground="#8AFFA5" FontFamily="Consolas" FontSize="10" BorderBrush="#252535" Padding="6"/>
+
+                    <!-- Actions -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                        <Button Style="{StaticResource HeaderBtn}" Content="Очистить" Click="BtnClearPerfLog_Click" Margin="0,0,6,0"/>
+                        <Button Style="{StaticResource HeaderBtn}" Content="📂 Открыть лог" Click="BtnOpenPerfLog_Click" Margin="0,0,6,0" ToolTip="Открыть текущий текстовый лог в Блокноте"/>
+                        <Button Style="{StaticResource HeaderBtn}" Content="💾 Экспорт в .txt" Background="#2E4A25" Click="BtnExportTxt_Click" Margin="0,0,6,0" ToolTip="Сохранить лог в .txt файл на диске"/>
+                        <Button Style="{StaticResource HeaderBtn}" Content="📋 В буфер" Background="#4A3425" Click="BtnCopyPerfLog_Click" ToolTip="Скопировать лог в буфер обмена"/>
+                    </StackPanel>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

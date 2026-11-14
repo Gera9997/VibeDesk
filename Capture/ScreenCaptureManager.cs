@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -30,6 +31,30 @@ namespace VibeDesk.Capture
         public string ActiveEngineName => _capturer.Name;
         public int ScreenWidth => _capturer.ScreenWidth;
         public int ScreenHeight => _capturer.ScreenHeight;
+        public int ScaledWidth => Math.Max(16, ((int)(ScreenWidth * ResolutionScale)) / 2 * 2);
+        public int ScaledHeight => Math.Max(StripCount * 8, ((int)(ScreenHeight * ResolutionScale)) / StripCount * StripCount);
+
+        public readonly struct FullFrameTelemetry
+        {
+            public readonly double CaptureMs;
+            public readonly double ScaleMs;
+            public readonly double EncodeMs;
+            public readonly int FrameBytes;
+            public readonly int Width;
+            public readonly int Height;
+
+            public FullFrameTelemetry(double capMs, double scaleMs, double encMs, int bytes, int w, int h)
+            {
+                CaptureMs = capMs;
+                ScaleMs = scaleMs;
+                EncodeMs = encMs;
+                FrameBytes = bytes;
+                Width = w;
+                Height = h;
+            }
+        }
+
+        public FullFrameTelemetry LastFullFrameTelemetry { get; private set; }
 
         public ScreenCaptureManager(int jpegQuality = 60, float scale = 0.85f)
         {
@@ -206,8 +231,9 @@ namespace VibeDesk.Capture
             return dirtyList;
         }
 
-        public byte[]? CaptureFullFrame(bool forceFrame = false)
+        public byte[]? CaptureFullFrame(bool forceFrame = false, bool includeTelemetry = false, uint frameId = 0, int qualityOverride = -1)
         {
+            long t0 = Stopwatch.GetTimestamp();
             Bitmap? bmp = _capturer.Capture();
             if (bmp == null)
             {
@@ -226,6 +252,9 @@ namespace VibeDesk.Capture
             {
                 return null;
             }
+
+            long t1 = Stopwatch.GetTimestamp();
+            double captureMs = (t1 - t0) * 1000.0 / Stopwatch.Frequency;
 
             int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
             int targetH = Math.Max(16, ((int)(bmp.Height * ResolutionScale)) / 2 * 2);
@@ -254,14 +283,81 @@ namespace VibeDesk.Capture
                 sourceBmp = _workBitmap;
             }
 
-            lock (_compressionStream)
+            long t2 = Stopwatch.GetTimestamp();
+            double scaleMs = (t2 - t1) * 1000.0 / Stopwatch.Frequency;
+
+            EncoderParameters encParams = _encoderParams;
+            bool customEnc = false;
+            if (qualityOverride >= 10 && qualityOverride <= 100 && qualityOverride != _currentQuality)
             {
-                _compressionStream.SetLength(0);
-                // Префикс полного кадра: [0] = 0xAA (FullFrame marker), [1] = 0x01 (version)
-                _compressionStream.WriteByte(0xAA);
-                _compressionStream.WriteByte(0x01);
-                sourceBmp.Save(_compressionStream, _jpegCodec, _encoderParams);
-                return _compressionStream.ToArray();
+                encParams = new EncoderParameters(1);
+                encParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)qualityOverride);
+                customEnc = true;
+            }
+
+            try
+            {
+                lock (_compressionStream)
+                {
+                    _compressionStream.SetLength(0);
+
+                    if (includeTelemetry)
+                    {
+                        // Префикс полного кадра с телеметрией:
+                        // [0] = 0xAA (FullFrame marker)
+                        // [1] = 0x02 (v2 с таймингами захвата и сжатия)
+                        // [2..5] = FrameId (uint32)
+                        // [6..9] = CaptureMs (float)
+                        // [10..13] = ScaleMs (float)
+                        // [14..17] = EncodeMs (float placeholder)
+                        // [18..25] = HostTimestampTicks (int64 placeholder)
+                        // [26..] = JPEG stream
+
+                        byte[] header = new byte[26];
+                        header[0] = 0xAA;
+                        header[1] = 0x02;
+                        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(2, 4), frameId);
+                        BinaryPrimitives.WriteSingleLittleEndian(header.AsSpan(6, 4), (float)captureMs);
+                        BinaryPrimitives.WriteSingleLittleEndian(header.AsSpan(10, 4), (float)scaleMs);
+                        _compressionStream.Write(header, 0, 26);
+
+                        long tEncodeStart = Stopwatch.GetTimestamp();
+                        sourceBmp.Save(_compressionStream, _jpegCodec, encParams);
+                        long tEncodeEnd = Stopwatch.GetTimestamp();
+                        double encodeMs = (tEncodeEnd - tEncodeStart) * 1000.0 / Stopwatch.Frequency;
+
+                        long hostTicks = Stopwatch.GetTimestamp();
+                        byte[] streamBuffer = _compressionStream.GetBuffer();
+                        BinaryPrimitives.WriteSingleLittleEndian(streamBuffer.AsSpan(14, 4), (float)encodeMs);
+                        BinaryPrimitives.WriteInt64LittleEndian(streamBuffer.AsSpan(18, 8), hostTicks);
+
+                        byte[] result = _compressionStream.ToArray();
+                        LastFullFrameTelemetry = new FullFrameTelemetry(captureMs, scaleMs, encodeMs, result.Length, targetW, targetH);
+                        return result;
+                    }
+                    else
+                    {
+                        // Классический префикс (v1): [0] = 0xAA, [1] = 0x01, далее JPEG
+                        _compressionStream.WriteByte(0xAA);
+                        _compressionStream.WriteByte(0x01);
+
+                        long tEncodeStart = Stopwatch.GetTimestamp();
+                        sourceBmp.Save(_compressionStream, _jpegCodec, encParams);
+                        long tEncodeEnd = Stopwatch.GetTimestamp();
+                        double encodeMs = (tEncodeEnd - tEncodeStart) * 1000.0 / Stopwatch.Frequency;
+
+                        byte[] result = _compressionStream.ToArray();
+                        LastFullFrameTelemetry = new FullFrameTelemetry(captureMs, scaleMs, encodeMs, result.Length, targetW, targetH);
+                        return result;
+                    }
+                }
+            }
+            finally
+            {
+                if (customEnc)
+                {
+                    encParams.Dispose();
+                }
             }
         }
 

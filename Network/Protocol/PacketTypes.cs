@@ -189,6 +189,19 @@ namespace VibeDesk.Network.Protocol
             return packet;
         }
 
+        public static byte[] CreateStreamSettings(float scale, int fps, int quality, int maxBitrateKbps)
+        {
+            if (maxBitrateKbps <= 0) return CreateStreamSettings(scale, fps, quality);
+
+            byte[] packet = new byte[17];
+            packet[0] = (byte)PacketType.StreamSettings;
+            BitConverter.TryWriteBytes(packet.AsSpan(1, 4), scale);
+            BitConverter.TryWriteBytes(packet.AsSpan(5, 4), fps);
+            BitConverter.TryWriteBytes(packet.AsSpan(9, 4), quality);
+            BitConverter.TryWriteBytes(packet.AsSpan(13, 4), maxBitrateKbps);
+            return packet;
+        }
+
         public static byte[] CreateFrameAck(uint frameId)
         {
             byte[] packet = new byte[5];

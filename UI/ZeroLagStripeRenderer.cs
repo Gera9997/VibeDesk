@@ -134,7 +134,8 @@ namespace VibeDesk.UI
                         byte[] rawPixels = ArrayPool<byte>.Shared.Rent(byteLen);
                         frame.CopyPixels(rawPixels, stride, 0);
 
-                        ushort actualY = slot.Stripe.StripeY > 0 ? slot.Stripe.StripeY : (ushort)(slot.Stripe.StripeIndex * height);
+                        // Позиция полосы строго рассчитывается от ее реальной декодированной высоты
+                        ushort actualY = (ushort)(slot.Stripe.StripeIndex * height);
 
                         var decodedSlot = new DecodedSlot
                         {

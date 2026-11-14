@@ -440,11 +440,11 @@ namespace VibeDesk.Network
             }
         }
 
-        public void SendStreamSettings(float scale, int fps, int quality)
+        public void SendStreamSettings(float scale, int fps, int quality, int maxBitrateKbps = 0)
         {
             if (IsConnected)
             {
-                byte[] packet = PacketBuilder.CreateStreamSettings(scale, fps, quality);
+                byte[] packet = PacketBuilder.CreateStreamSettings(scale, fps, quality, maxBitrateKbps);
                 _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
             }
         }

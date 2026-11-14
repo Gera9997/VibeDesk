@@ -29,6 +29,8 @@ namespace VibeDesk.Network
         private volatile bool _isRunning = false;
         private volatile int _targetFps = 25;
         private volatile int _maxBitrateKbps = 15000;
+        private volatile int _configuredQuality = 60;
+        private int _adaptiveVideoStreamQuality = 60;
         private volatile byte _streamMode = 0; // 0 = TurboMjpeg (strips), 1 = VideoStream (full frame)
         private uint _frameCounter = 0;
         private volatile uint _lastClientAckedFrameId = 0;
@@ -203,12 +205,18 @@ namespace VibeDesk.Network
             };
         }
 
-        public void SetStreamSettings(float scale, int targetFps, int quality)
+        public void SetStreamSettings(float scale, int targetFps, int quality, int maxBitrateKbps = 0)
         {
             _targetFps = Math.Clamp(targetFps, 15, 120);
+            _configuredQuality = Math.Clamp(quality, 10, 100);
+            _adaptiveVideoStreamQuality = _configuredQuality;
+            if (maxBitrateKbps > 0)
+            {
+                _maxBitrateKbps = Math.Clamp(maxBitrateKbps, 500, 50000);
+            }
             _captureManager?.SetScale(scale);
             _captureManager?.SetQuality(quality);
-            OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%");
+            OnStatusChanged?.Invoke($"[Настройки стрима] Масштаб: {(int)(scale * 100)}%, Цель FPS: {_targetFps}, Качество: {quality}%, Кэп: {_maxBitrateKbps} Кбит/с");
         }
 
         public bool Start(int targetFps = 25, int jpegQuality = 55, float scale = 0.70f, string bindIp = "", int maxBitrateKbps = 15000)
@@ -378,7 +386,7 @@ namespace VibeDesk.Network
                                 if (strips != null && strips.Count > 0)
                                 {
                                     int totalStrips = ScreenCaptureManager.StripCount;
-                                    int stripH = ScreenHeight / totalStrips;
+                                    int stripH = (_captureManager?.ScaledHeight ?? ScreenHeight) / totalStrips;
 
                                     foreach (var stripData in strips)
                                     {
@@ -409,12 +417,34 @@ namespace VibeDesk.Network
                             }
                             else
                             {
-                                var fullFrame = _captureManager.CaptureFullFrame(forceFrame: forceKeyframe);
+                                // Целевой бюджет одного кадра в байтах для удержания FPS
+                                long targetBytesPerFrame = Math.Max(16384, (long)((_maxBitrateKbps * 1024L / 8.0) / Math.Max(1, _targetFps)));
+
+                                uint nextFrameId = unchecked(_frameCounter + 1);
+                                var fullFrame = _captureManager.CaptureFullFrame(
+                                    forceFrame: forceKeyframe,
+                                    includeTelemetry: true,
+                                    frameId: nextFrameId,
+                                    qualityOverride: _adaptiveVideoStreamQuality);
+
                                 if (fullFrame != null && fullFrame.Length > 0)
                                 {
-                                    uint frameId = unchecked(++_frameCounter);
-                                    _lastSentFrameId = frameId;
+                                    _frameCounter = nextFrameId;
+                                    _lastSentFrameId = _frameCounter;
                                     _lastFrameSentTicks = nowTicks;
+
+                                    // Адаптивное управление качеством под бюджет пропускной способности:
+                                    if (fullFrame.Length > targetBytesPerFrame * 1.25 || tokenBucket < 0)
+                                    {
+                                        // Кадр слишком велик для канала: снижаем качество для удержания плавного FPS
+                                        int step = (fullFrame.Length > targetBytesPerFrame * 2.0) ? 5 : 2;
+                                        _adaptiveVideoStreamQuality = Math.Max(20, _adaptiveVideoStreamQuality - step);
+                                    }
+                                    else if (fullFrame.Length < targetBytesPerFrame * 0.85 && tokenBucket > targetBytesPerFrame * 0.5)
+                                    {
+                                        // Есть запас пропускной способности: плавно возвращаем четкость
+                                        _adaptiveVideoStreamQuality = Math.Min(_configuredQuality, _adaptiveVideoStreamQuality + 1);
+                                    }
 
                                     int totalLength = fullFrame.Length;
                                     int chunkSize = PacketBuilder.MaxChunkPayloadSize;
@@ -424,7 +454,12 @@ namespace VibeDesk.Network
                                     {
                                         int offset = i * chunkSize;
                                         int length = Math.Min(chunkSize, totalLength - offset);
-                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, fullFrame, offset, length);
+                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(_frameCounter, i, totalChunks, fullFrame, offset, length);
+
+                                        if (i > 0 && (i % 8) == 0)
+                                        {
+                                            Thread.SpinWait(200); // Микропауза каждые 8 чанков для защиты от переполнения сокета
+                                        }
 
                                         peer.Send(chunkPacket, DeliveryMethod.Unreliable);
                                         bytesSentThisSecond += chunkPacket.Length;
@@ -507,7 +542,12 @@ namespace VibeDesk.Network
                         float scale = reader.GetFloat();
                         int fps = reader.GetInt();
                         int quality = reader.GetInt();
-                        SetStreamSettings(scale, fps, quality);
+                        int bitrate = 0;
+                        if (reader.AvailableBytes >= 4)
+                        {
+                            bitrate = reader.GetInt();
+                        }
+                        SetStreamSettings(scale, fps, quality, bitrate);
                     }
                     break;
 

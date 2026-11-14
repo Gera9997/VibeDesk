@@ -1,6 +1,9 @@
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Windows;
@@ -44,7 +47,27 @@ namespace VibeDesk.UI
             public int Height;
             public int Stride;
             public byte[] Pixels;
+            public uint FrameId;
+            public float HostCapMs;
+            public float HostScaleMs;
+            public float HostEncodeMs;
+            public double DecodeMs;
+            public long QueueTimestampTicks;
+            public int PayloadSizeBytes;
         }
+
+        private readonly List<string> _perfLogEntries = new(300);
+        private readonly object _perfLogLock = new();
+        private string? _perfLogFilePath;
+        private double _avgCapMs = 0;
+        private double _avgScaleMs = 0;
+        private double _avgEncodeMs = 0;
+        private double _avgHostMs = 0;
+        private double _avgQueueMs = 0;
+        private double _avgDecodeMs = 0;
+        private double _avgRenderMs = 0;
+        private double _avgTotalMs = 0;
+        private int _sampleCount = 0;
 
         private readonly ConcurrentQueue<DecodedStrip> _decodedQueue = new();
         private int _uiUpdateScheduled = 0;
@@ -113,9 +136,9 @@ namespace VibeDesk.UI
                 Interlocked.Exchange(ref _latestStripBytes[stripIdx], payload);
                 _frameSignal.Set();
             }
-            else if (payload[0] == 0xAA && payload[1] == 0x01 && payload[2] == 0xFF && payload[3] == 0xD8)
+            else if (payload[0] == 0xAA && (payload[1] == 0x01 || payload[1] == 0x02))
             {
-                // Полнокадровый видеопоток (Full Frame mode)
+                // Полнокадровый видеопоток (Full Frame mode, v1 или v2 с телеметрией)
                 Interlocked.Exchange(ref _latestFullFrameBytes, payload);
                 _frameSignal.Set();
             }
@@ -138,9 +161,25 @@ namespace VibeDesk.UI
                 {
                     try
                     {
+                        int jpegOffset = 2;
+                        uint frameId = 0;
+                        float hostCapMs = 0;
+                        float hostScaleMs = 0;
+                        float hostEncodeMs = 0;
+
+                        if (fullFramePayload.Length >= 26 && fullFramePayload[0] == 0xAA && fullFramePayload[1] == 0x02)
+                        {
+                            jpegOffset = 26;
+                            frameId = BinaryPrimitives.ReadUInt32LittleEndian(fullFramePayload.AsSpan(2, 4));
+                            hostCapMs = BinaryPrimitives.ReadSingleLittleEndian(fullFramePayload.AsSpan(6, 4));
+                            hostScaleMs = BinaryPrimitives.ReadSingleLittleEndian(fullFramePayload.AsSpan(10, 4));
+                            hostEncodeMs = BinaryPrimitives.ReadSingleLittleEndian(fullFramePayload.AsSpan(14, 4));
+                        }
+
+                        long tDecodeStart = Stopwatch.GetTimestamp();
                         decodeStream.Position = 0;
                         decodeStream.SetLength(0);
-                        decodeStream.Write(fullFramePayload, 2, fullFramePayload.Length - 2);
+                        decodeStream.Write(fullFramePayload, jpegOffset, fullFramePayload.Length - jpegOffset);
                         decodeStream.Position = 0;
 
                         var bmp = new BitmapImage();
@@ -159,6 +198,9 @@ namespace VibeDesk.UI
                         byte[] pixels = ArrayPool<byte>.Shared.Rent(bufferSize);
                         converted.CopyPixels(pixels, stride, 0);
 
+                        long tDecodeEnd = Stopwatch.GetTimestamp();
+                        double decodeMs = (tDecodeEnd - tDecodeStart) * 1000.0 / Stopwatch.Frequency;
+
                         while (_decodedQueue.Count > 8)
                         {
                             if (_decodedQueue.TryDequeue(out var stale))
@@ -174,7 +216,14 @@ namespace VibeDesk.UI
                             Width = w,
                             Height = h,
                             Stride = stride,
-                            Pixels = pixels
+                            Pixels = pixels,
+                            FrameId = frameId,
+                            HostCapMs = hostCapMs,
+                            HostScaleMs = hostScaleMs,
+                            HostEncodeMs = hostEncodeMs,
+                            DecodeMs = decodeMs,
+                            QueueTimestampTicks = Stopwatch.GetTimestamp(),
+                            PayloadSizeBytes = fullFramePayload.Length
                         });
                         decodedAny = true;
                     }
@@ -264,12 +313,18 @@ namespace VibeDesk.UI
 
                         if (strip.StripIndex == -1)
                         {
-                            // Отрисовка полного кадра в один проход
+                            // Отрисовка полного кадра в один проход с замером времени
+                            long tRenderStart = Stopwatch.GetTimestamp();
                             _canvasBitmap.WritePixels(
                                 new Int32Rect(0, 0, strip.Width, strip.Height),
                                 strip.Pixels,
                                 strip.Stride,
                                 0);
+                            long tRenderEnd = Stopwatch.GetTimestamp();
+                            double renderMs = (tRenderEnd - tRenderStart) * 1000.0 / Stopwatch.Frequency;
+                            double queueMs = (tRenderStart - strip.QueueTimestampTicks) * 1000.0 / Stopwatch.Frequency;
+
+                            RecordFrameTiming(strip, queueMs, renderMs);
                         }
                         else
                         {
@@ -310,6 +365,213 @@ namespace VibeDesk.UI
                 {
                     Dispatcher.InvokeAsync(ApplyDecodedStripsToUi, DispatcherPriority.Render);
                 }
+            }
+        }
+
+        private void RecordFrameTiming(DecodedStrip strip, double queueMs, double renderMs)
+        {
+            double totalHostMs = strip.HostCapMs + strip.HostScaleMs + strip.HostEncodeMs;
+            double clientPipelineMs = strip.DecodeMs + queueMs + renderMs;
+            double totalPipelineMs = totalHostMs + clientPipelineMs;
+
+            _sampleCount++;
+            double alpha = _sampleCount == 1 ? 1.0 : 0.05;
+            _avgCapMs = (1 - alpha) * _avgCapMs + alpha * strip.HostCapMs;
+            _avgScaleMs = (1 - alpha) * _avgScaleMs + alpha * strip.HostScaleMs;
+            _avgEncodeMs = (1 - alpha) * _avgEncodeMs + alpha * strip.HostEncodeMs;
+            _avgHostMs = (1 - alpha) * _avgHostMs + alpha * totalHostMs;
+            _avgQueueMs = (1 - alpha) * _avgQueueMs + alpha * queueMs;
+            _avgDecodeMs = (1 - alpha) * _avgDecodeMs + alpha * strip.DecodeMs;
+            _avgRenderMs = (1 - alpha) * _avgRenderMs + alpha * renderMs;
+            _avgTotalMs = (1 - alpha) * _avgTotalMs + alpha * totalPipelineMs;
+
+            string line = $"{DateTime.Now:HH:mm:ss.fff} [Кадр #{strip.FrameId}] Захват: {strip.HostCapMs:F1}мс | Ресайз: {strip.HostScaleMs:F1}мс | JPEG: {strip.HostEncodeMs:F1}мс | Очередь: {queueMs:F1}мс | Декод: {strip.DecodeMs:F1}мс | UI: {renderMs:F1}мс | Всего: {totalPipelineMs:F1}мс | {strip.PayloadSizeBytes / 1024.0:F1} КБ";
+
+            lock (_perfLogLock)
+            {
+                if (_perfLogEntries.Count >= 500)
+                {
+                    _perfLogEntries.RemoveAt(0);
+                }
+                _perfLogEntries.Add(line);
+            }
+
+            AppendPerfLogToFile(line);
+
+            if (DrawerPerfLogs.Visibility == Visibility.Visible)
+            {
+                TxtLiveSummary.Text =
+                    $"Кадр: #{strip.FrameId} ({strip.Width}x{strip.Height}, {strip.PayloadSizeBytes / 1024.0:F1} КБ)\n" +
+                    $"• Захват + Сжатие (Хост): {totalHostMs:F1} мс (Захват: {strip.HostCapMs:F1}мс, Ресайз: {strip.HostScaleMs:F1}мс, JPEG: {strip.HostEncodeMs:F1}мс)\n" +
+                    $"• Очередь кадра:          {queueMs:F1} мс\n" +
+                    $"• Декодирование (Клиент):  {strip.DecodeMs:F1} мс\n" +
+                    $"• Отрисовка WPF UI:       {renderMs:F1} мс\n" +
+                    $"────────────────────────────────────────\n" +
+                    $"Суммарный пайплайн:       {totalPipelineMs:F1} мс (~{1000.0 / Math.Max(1, totalPipelineMs):F0} FPS макс) | Среднее: {_avgTotalMs:F1} мс";
+
+                TxtPerfLog.AppendText(line + "\n");
+                TxtPerfLog.ScrollToEnd();
+            }
+        }
+
+        private void AppendPerfLogToFile(string line)
+        {
+            try
+            {
+                if (_perfLogFilePath == null)
+                {
+                    string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "logs");
+                    System.IO.Directory.CreateDirectory(dir);
+                    _perfLogFilePath = System.IO.Path.Combine(dir, "videostream_perf.log");
+                }
+                System.IO.File.AppendAllText(_perfLogFilePath, line + Environment.NewLine);
+            }
+            catch { }
+        }
+
+        private string GenerateFormattedPerfLog()
+        {
+            return $"====================================================================================\n" +
+                   $" VibeDesk VideoStream Performance Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+                   $"====================================================================================\n" +
+                   $"Сводная статистика за сессию:\n" +
+                   $"• Захват экрана на Хосте (DXGI/GDI): {_avgCapMs:F2} мс\n" +
+                   $"• Скейлинг/ресайз на Хосте:          {_avgScaleMs:F2} мс\n" +
+                   $"• Сжатие в Turbo-JPEG на Хосте:      {_avgEncodeMs:F2} мс\n" +
+                   $"• Суммарное время Хоста:             {_avgHostMs:F2} мс\n" +
+                   $"• Сеть + Очередь на Клиенте:         {_avgQueueMs:F2} мс\n" +
+                   $"• Декодирование JPEG на Клиенте:     {_avgDecodeMs:F2} мс\n" +
+                   $"• Отрисовка WPF UI на Клиенте:       {_avgRenderMs:F2} мс\n" +
+                   $"────────────────────────────────────────────────────────────────────────────────────\n" +
+                   $"Полная сквозная задержка (Total):    {_avgTotalMs:F2} мс (~{(1000.0 / Math.Max(1, _avgTotalMs)):F0} FPS)\n" +
+                   $"Всего записано кадров в буфере:      {_perfLogEntries.Count}\n" +
+                   $"====================================================================================\n\n" +
+                   string.Join(Environment.NewLine, _perfLogEntries);
+        }
+
+        private void BtnTogglePerfDrawer_Click(object sender, RoutedEventArgs e)
+        {
+            DrawerPerfLogs.Visibility = DrawerPerfLogs.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            if (DrawerPerfLogs.Visibility == Visibility.Visible)
+            {
+                lock (_perfLogLock)
+                {
+                    TxtPerfLog.Text = string.Join("\n", _perfLogEntries) + "\n";
+                    TxtPerfLog.ScrollToEnd();
+                }
+            }
+        }
+
+        private void BtnClosePerfDrawer_Click(object sender, RoutedEventArgs e)
+        {
+            DrawerPerfLogs.Visibility = Visibility.Collapsed;
+        }
+
+        private void BtnClearPerfLog_Click(object sender, RoutedEventArgs e)
+        {
+            lock (_perfLogLock)
+            {
+                _perfLogEntries.Clear();
+            }
+            TxtPerfLog.Clear();
+            try
+            {
+                if (_perfLogFilePath != null && System.IO.File.Exists(_perfLogFilePath))
+                {
+                    System.IO.File.WriteAllText(_perfLogFilePath, "");
+                }
+            }
+            catch { }
+        }
+
+        private void BtnExportTxt_Click(object sender, RoutedEventArgs e)
+        {
+            string content;
+            lock (_perfLogLock)
+            {
+                content = GenerateFormattedPerfLog();
+            }
+
+            var saveDlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Экспорт лога таймингов видеопотока",
+                Filter = "Текстовые файлы (*.txt)|*.txt|Все файлы (*.*)|*.*",
+                FileName = $"VibeDesk_VideoStream_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+            };
+
+            if (saveDlg.ShowDialog(this) == true)
+            {
+                try
+                {
+                    System.IO.File.WriteAllText(saveDlg.FileName, content, System.Text.Encoding.UTF8);
+
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(saveDlg.FileName) { UseShellExecute = true });
+                    }
+                    catch { }
+
+                    VibeMessageBox.Show(this, $"Лог успешно сохранен:\n{saveDlg.FileName}\n\nФайл открыт в Блокноте.", "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    VibeMessageBox.Show(this, $"Ошибка при сохранении лога:\n{ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void BtnOpenPerfLog_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_perfLogFilePath == null)
+                {
+                    string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "logs");
+                    System.IO.Directory.CreateDirectory(dir);
+                    _perfLogFilePath = System.IO.Path.Combine(dir, "videostream_perf.log");
+                }
+
+                if (!System.IO.File.Exists(_perfLogFilePath))
+                {
+                    lock (_perfLogLock)
+                    {
+                        System.IO.File.WriteAllText(_perfLogFilePath, GenerateFormattedPerfLog(), System.Text.Encoding.UTF8);
+                    }
+                }
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_perfLogFilePath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                VibeMessageBox.Show(this, $"Не удалось открыть файл лога:\n{ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnCopyPerfLog_Click(object sender, RoutedEventArgs e)
+        {
+            string content;
+            lock (_perfLogLock)
+            {
+                content = GenerateFormattedPerfLog();
+            }
+            try
+            {
+                Clipboard.SetText(content);
+
+                // Также сохраняем файл на Рабочий стол для максимального удобства (так как лог может быть огромным)
+                string desktopFile = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                    $"VibeDesk_VideoStream_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                System.IO.File.WriteAllText(desktopFile, content, System.Text.Encoding.UTF8);
+
+                VibeMessageBox.Show(this, 
+                    $"Лог скопирован в буфер обмена!\n\nТакже автоматически сохранен в .txt файл на Рабочем столе:\n{desktopFile}", 
+                    "VibeDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                VibeMessageBox.Show(this, $"Не удалось скопировать лог:\n{ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -462,6 +724,12 @@ namespace VibeDesk.UI
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.F3)
+            {
+                BtnTogglePerfDrawer_Click(sender, e);
+                e.Handled = true;
+                return;
+            }
             if (e.Key == Key.F11)
             {
                 ToggleFullscreen();
@@ -491,15 +759,15 @@ namespace VibeDesk.UI
         private void CmbLiveMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CmbLiveMode == null || _client == null || !_client.IsConnected) return;
-            (float scale, int fps, int quality) = CmbLiveMode.SelectedIndex switch
+            (float scale, int fps, int quality, int bitrate) = CmbLiveMode.SelectedIndex switch
             {
-                0 => (1.0f, 60, 75),
-                1 => (0.75f, 60, 65),
-                2 => (0.50f, 60, 55),
-                3 => (0.33f, 30, 45),
-                _ => (0.75f, 60, 65)
+                0 => (1.0f, 60, 75, 25000), // 100% Чёткость (до 25 Мбит/с)
+                1 => (0.75f, 60, 65, 15000), // 75% Баланс (до 15 Мбит/с)
+                2 => (0.50f, 60, 55, 8000),  // 50% Турбо FPS (до 8 Мбит/с)
+                3 => (0.33f, 30, 45, 4000),  // 33% Эконом (до 4 Мбит/с)
+                _ => (0.75f, 60, 65, 15000)
             };
-            _client.SendStreamSettings(scale, fps, quality);
+            _client.SendStreamSettings(scale, fps, quality, bitrate);
         }
 
         private void ToggleFullscreen()
