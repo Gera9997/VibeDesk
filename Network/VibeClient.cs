@@ -439,6 +439,15 @@ namespace VibeDesk.Network
             }
         }
 
+        public void SendStreamMode(byte mode)
+        {
+            if (IsConnected)
+            {
+                byte[] packet = PacketBuilder.CreateStreamMode(mode);
+                _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
         public void Punch(IPEndPoint target, string deviceId = "")
         {
             try

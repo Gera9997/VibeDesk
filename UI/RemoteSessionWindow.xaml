@@ -49,8 +49,14 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <TextBlock Text="Режим:" Foreground="#7A7A90" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox x:Name="CmbLiveMode" Width="150" SelectedIndex="0" SelectionChanged="CmbLiveMode_SelectionChanged" FontSize="11" Margin="0,0,12,0">
+                    <TextBlock Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="CmbStreamCodec" Width="170" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="11" Margin="0,0,12,0">
+                        <ComboBoxItem Content="⚡ Турбо-MJPEG (Полосы)"/>
+                        <ComboBoxItem Content="🎬 Видеопоток (Full Frame)"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Масштаб:" Foreground="#7A7A90" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="CmbLiveMode" Width="140" SelectedIndex="0" SelectionChanged="CmbLiveMode_SelectionChanged" FontSize="11" Margin="0,0,12,0">
                         <ComboBoxItem Content="🎯 100% Чёткость"/>
                         <ComboBoxItem Content="⚖️ 75% Баланс"/>
                         <ComboBoxItem Content="🚀 50% Турбо FPS"/>

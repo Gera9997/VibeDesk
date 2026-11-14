@@ -16,11 +16,12 @@
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.12" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\icon.ico"/>
-    <Resource Include="Assets\background.jpg"/>
+    <Resource Include="Assets\icon.ico" />
+    <Resource Include="Assets\background.jpg" />
   </ItemGroup>
 
   <ItemGroup>

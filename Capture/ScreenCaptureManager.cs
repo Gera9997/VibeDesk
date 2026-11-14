@@ -204,6 +204,65 @@ namespace VibeDesk.Capture
             return dirtyList;
         }
 
+        public byte[]? CaptureFullFrame(bool forceFrame = false)
+        {
+            Bitmap? bmp = _capturer.Capture();
+            if (bmp == null)
+            {
+                if (_capturer is DxgiScreenCapture)
+                {
+                    _capturer.Dispose();
+                    var gdi = new GdiScreenCapture();
+                    gdi.Initialize();
+                    _capturer = gdi;
+                    bmp = _capturer.Capture();
+                }
+                if (bmp == null) return null;
+            }
+
+            if (!forceFrame && !_capturer.HasNewFrame)
+            {
+                return null;
+            }
+
+            int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
+            int targetH = Math.Max(16, ((int)(bmp.Height * ResolutionScale)) / 2 * 2);
+
+            Bitmap sourceBmp;
+            if (Math.Abs(ResolutionScale - 1.0f) < 0.01f && bmp.Width == targetW && bmp.Height == targetH)
+            {
+                sourceBmp = bmp;
+            }
+            else
+            {
+                if (_workBitmap == null || _workBitmap.Width != targetW || _workBitmap.Height != targetH)
+                {
+                    _workGraphics?.Dispose();
+                    _workBitmap?.Dispose();
+                    _workBitmap = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
+                    _workGraphics = Graphics.FromImage(_workBitmap);
+                    _workGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    _workGraphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+                    _workGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                    _workGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                    _workGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+                }
+
+                _workGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
+                sourceBmp = _workBitmap;
+            }
+
+            lock (_compressionStream)
+            {
+                _compressionStream.SetLength(0);
+                // Префикс полного кадра: [0] = 0xAA (FullFrame marker), [1] = 0x01 (version)
+                _compressionStream.WriteByte(0xAA);
+                _compressionStream.WriteByte(0x01);
+                sourceBmp.Save(_compressionStream, _jpegCodec, _encoderParams);
+                return _compressionStream.ToArray();
+            }
+        }
+
         public byte[]? CaptureAndEncode(bool forceFrame = false)
         {
             Bitmap? bmp = _capturer.Capture();

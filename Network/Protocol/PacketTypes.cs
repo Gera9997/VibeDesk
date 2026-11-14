@@ -17,7 +17,8 @@ namespace VibeDesk.Network.Protocol
         VibePunch = 9,
         VibePunchAck = 10,
         CursorPosition = 11,
-        PictureLossIndication = 12
+        PictureLossIndication = 12,
+        StreamMode = 13
     }
 
     public static class PacketBuilder
@@ -166,6 +167,11 @@ namespace VibeDesk.Network.Protocol
         public static byte[] CreatePli()
         {
             return new byte[] { (byte)PacketType.PictureLossIndication };
+        }
+
+        public static byte[] CreateStreamMode(byte mode)
+        {
+            return new byte[] { (byte)PacketType.StreamMode, mode };
         }
     }
 }

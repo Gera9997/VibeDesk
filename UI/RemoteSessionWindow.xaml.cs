@@ -25,6 +25,8 @@ namespace VibeDesk.UI
 
         // Хранит только самый последний полученный пакет для каждой из 8 полос
         private readonly byte[]?[] _latestStripBytes = new byte[]?[ScreenCaptureManager.StripCount];
+        private byte[]? _latestFullFrameBytes = null;
+        private byte _currentStreamMode = 0; // 0 = TurboMjpeg (полосы), 1 = VideoStream (full frame)
         private readonly AutoResetEvent _frameSignal = new AutoResetEvent(false);
         private readonly Thread? _renderThread;
         private volatile bool _renderRunning = true;
@@ -97,15 +99,22 @@ namespace VibeDesk.UI
 
             if (payload[0] < 32 && payload[1] == ScreenCaptureManager.StripCount && payload[2] == 0xFF && payload[3] == 0xD8)
             {
+                // Полосовой режим (Turbo-MJPEG)
                 int stripIdx = payload[0];
                 Interlocked.Exchange(ref _latestStripBytes[stripIdx], payload);
+                _frameSignal.Set();
+            }
+            else if (payload[0] == 0xAA && payload[1] == 0x01 && payload[2] == 0xFF && payload[3] == 0xD8)
+            {
+                // Полнокадровый видеопоток (Full Frame mode)
+                Interlocked.Exchange(ref _latestFullFrameBytes, payload);
                 _frameSignal.Set();
             }
         }
 
         private void RenderLoop()
         {
-            using var decodeStream = new MemoryStream(1024 * 256);
+            using var decodeStream = new MemoryStream(1024 * 512);
 
             while (_renderRunning)
             {
@@ -114,6 +123,56 @@ namespace VibeDesk.UI
 
                 bool decodedAny = false;
 
+                // 1. Прием и декодирование полного кадра (Видеорежим)
+                byte[]? fullFramePayload = Interlocked.Exchange(ref _latestFullFrameBytes, null);
+                if (fullFramePayload != null)
+                {
+                    try
+                    {
+                        decodeStream.Position = 0;
+                        decodeStream.SetLength(0);
+                        decodeStream.Write(fullFramePayload, 2, fullFramePayload.Length - 2);
+                        decodeStream.Position = 0;
+
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.StreamSource = decodeStream;
+                        bmp.EndInit();
+                        bmp.Freeze();
+
+                        var converted = new FormatConvertedBitmap(bmp, PixelFormats.Bgr32, null, 0);
+                        converted.Freeze();
+                        int w = converted.PixelWidth;
+                        int h = converted.PixelHeight;
+                        int stride = w * 4;
+                        int bufferSize = stride * h;
+                        byte[] pixels = ArrayPool<byte>.Shared.Rent(bufferSize);
+                        converted.CopyPixels(pixels, stride, 0);
+
+                        while (_decodedQueue.Count > 8)
+                        {
+                            if (_decodedQueue.TryDequeue(out var stale))
+                            {
+                                ArrayPool<byte>.Shared.Return(stale.Pixels);
+                            }
+                        }
+
+                        _decodedQueue.Enqueue(new DecodedStrip
+                        {
+                            StripIndex = -1, // Маркер полного кадра
+                            TotalStrips = 1,
+                            Width = w,
+                            Height = h,
+                            Stride = stride,
+                            Pixels = pixels
+                        });
+                        decodedAny = true;
+                    }
+                    catch { }
+                }
+
+                // 2. Прием и декодирование полос (Турбо-MJPEG)
                 for (int s = 0; s < ScreenCaptureManager.StripCount; s++)
                 {
                     byte[]? stripPayload = Interlocked.Exchange(ref _latestStripBytes[s], null);
@@ -184,7 +243,7 @@ namespace VibeDesk.UI
                     try
                     {
                         int fullW = strip.Width;
-                        int fullH = strip.Height * strip.TotalStrips;
+                        int fullH = strip.StripIndex == -1 ? strip.Height : (strip.Height * strip.TotalStrips);
 
                         if (_canvasBitmap == null || _canvasW != fullW || _canvasH != fullH)
                         {
@@ -194,14 +253,27 @@ namespace VibeDesk.UI
                             ImgScreen.Source = _canvasBitmap;
                         }
 
-                        int destY = strip.StripIndex * strip.Height;
-                        if (destY + strip.Height <= _canvasH)
+                        if (strip.StripIndex == -1)
                         {
+                            // Отрисовка полного кадра в один проход
                             _canvasBitmap.WritePixels(
-                                new Int32Rect(0, destY, strip.Width, strip.Height),
+                                new Int32Rect(0, 0, strip.Width, strip.Height),
                                 strip.Pixels,
                                 strip.Stride,
                                 0);
+                        }
+                        else
+                        {
+                            // Отрисовка отдельной полосы
+                            int destY = strip.StripIndex * strip.Height;
+                            if (destY + strip.Height <= _canvasH)
+                            {
+                                _canvasBitmap.WritePixels(
+                                    new Int32Rect(0, destY, strip.Width, strip.Height),
+                                    strip.Pixels,
+                                    strip.Stride,
+                                    0);
+                            }
                         }
                     }
                     finally
@@ -280,7 +352,17 @@ namespace VibeDesk.UI
         private void UpdateStats()
         {
             if (_client == null || !_client.IsConnected) return;
-            TxtStats.Text = $"Полос/c: {_client.CurrentFps} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кбит/с";
+            string codecTag = _currentStreamMode == 0 ? "⚡ Турбо-MJPEG" : "🎬 Видеопоток";
+            string fpsLabel = _currentStreamMode == 0 ? $"Полос/c: {_client.CurrentFps}" : $"Кадров/c: {_client.CurrentFps}";
+            TxtStats.Text = $"[{codecTag}] {fpsLabel} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кбит/с";
+        }
+
+        private void CmbStreamCodec_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (CmbStreamCodec == null || _client == null || !_client.IsConnected) return;
+            _currentStreamMode = (byte)CmbStreamCodec.SelectedIndex;
+            _client.SendStreamMode(_currentStreamMode);
+            UpdateStats();
         }
 
         private void OnCursorPositionReceived(bool visible, int x, int y, int screenW, int screenH)

@@ -28,6 +28,7 @@ namespace VibeDesk.Network
         private volatile bool _isRunning = false;
         private volatile int _targetFps = 25;
         private volatile int _maxBitrateKbps = 15000;
+        private volatile byte _streamMode = 0; // 0 = TurboMjpeg (strips), 1 = VideoStream (full frame)
         private uint _frameCounter = 0;
         private volatile uint _lastClientAckedFrameId = 0;
         private uint _lastSentFrameId = 0;
@@ -368,18 +369,49 @@ namespace VibeDesk.Network
 
                         if (allowSend)
                         {
-                            var strips = _captureManager.CaptureDirtyStrips(forceAll: forceKeyframe);
-                            if (strips != null && strips.Count > 0)
+                            if (_streamMode == 0)
                             {
-                                foreach (var stripData in strips)
+                                var strips = _captureManager.CaptureDirtyStrips(forceAll: forceKeyframe);
+                                if (strips != null && strips.Count > 0)
                                 {
-                                    if (peer.ConnectionState != ConnectionState.Connected) break;
+                                    foreach (var stripData in strips)
+                                    {
+                                        if (peer.ConnectionState != ConnectionState.Connected) break;
 
-                                    uint stripFrameId = unchecked(++_frameCounter);
-                                    _lastSentFrameId = stripFrameId;
+                                        uint stripFrameId = unchecked(++_frameCounter);
+                                        _lastSentFrameId = stripFrameId;
+                                        _lastFrameSentTicks = nowTicks;
+
+                                        int totalLength = stripData.Length;
+                                        int chunkSize = PacketBuilder.MaxChunkPayloadSize;
+                                        ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+
+                                        for (ushort i = 0; i < totalChunks; i++)
+                                        {
+                                            int offset = i * chunkSize;
+                                            int length = Math.Min(chunkSize, totalLength - offset);
+                                            byte[] chunkPacket = PacketBuilder.CreateFrameChunk(stripFrameId, i, totalChunks, stripData, offset, length);
+
+                                            peer.Send(chunkPacket, DeliveryMethod.Unreliable);
+                                            bytesSentThisSecond += chunkPacket.Length;
+                                            tokenBucket -= chunkPacket.Length;
+                                        }
+                                    }
+
+                                    _netServer.TriggerUpdate();
+                                    framesThisSecond++;
+                                }
+                            }
+                            else
+                            {
+                                var fullFrame = _captureManager.CaptureFullFrame(forceFrame: forceKeyframe);
+                                if (fullFrame != null && fullFrame.Length > 0)
+                                {
+                                    uint frameId = unchecked(++_frameCounter);
+                                    _lastSentFrameId = frameId;
                                     _lastFrameSentTicks = nowTicks;
 
-                                    int totalLength = stripData.Length;
+                                    int totalLength = fullFrame.Length;
                                     int chunkSize = PacketBuilder.MaxChunkPayloadSize;
                                     ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
 
@@ -387,16 +419,16 @@ namespace VibeDesk.Network
                                     {
                                         int offset = i * chunkSize;
                                         int length = Math.Min(chunkSize, totalLength - offset);
-                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(stripFrameId, i, totalChunks, stripData, offset, length);
+                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(frameId, i, totalChunks, fullFrame, offset, length);
 
                                         peer.Send(chunkPacket, DeliveryMethod.Unreliable);
                                         bytesSentThisSecond += chunkPacket.Length;
                                         tokenBucket -= chunkPacket.Length;
                                     }
-                                }
 
-                                _netServer.TriggerUpdate();
-                                framesThisSecond++;
+                                    _netServer.TriggerUpdate();
+                                    framesThisSecond++;
+                                }
                             }
                         }
                     }
@@ -471,6 +503,14 @@ namespace VibeDesk.Network
                         int fps = reader.GetInt();
                         int quality = reader.GetInt();
                         SetStreamSettings(scale, fps, quality);
+                    }
+                    break;
+
+                case PacketType.StreamMode:
+                    if (reader.AvailableBytes >= 1)
+                    {
+                        _streamMode = reader.GetByte();
+                        OnStatusChanged?.Invoke($"[Режим стрима изменен] {(_streamMode == 0 ? "⚡ Турбо-MJPEG (Полосы)" : "🎬 Видеопоток (Full Frame)")}");
                     }
                     break;
             }
