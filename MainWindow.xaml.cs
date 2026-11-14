@@ -163,6 +163,11 @@ namespace VibeDesk
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "VibeDesk", "recent.json");
 
+        private string _currentTheme = "classic";
+        private static string ThemeFilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "VibeDesk", "theme.txt");
+
         public MainWindow()
         {
             InitializeComponent();
@@ -170,6 +175,9 @@ namespace VibeDesk
             TxtAppVersion.Text = AppVersion.FullTitle;
             TxtFooterVersion.Text = $"VibeDesk {AppVersion.FullTitle}";
             UpdateManager.CleanupLeftoverBackup();
+
+            LoadThemePreference();
+            ApplyTheme(_currentTheme);
 
             LoadRecentConnections();
 
@@ -958,6 +966,143 @@ namespace VibeDesk
                 client.OnPunchAckReceived -= onPunch;
                 client.OnPunchReceived -= onPunch;
             }
+        }
+
+        private void BtnThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _currentTheme = (_currentTheme == "noir") ? "classic" : "noir";
+            SaveThemePreference(_currentTheme);
+            ApplyTheme(_currentTheme);
+            AppendLog($"🎨 Тема оформления переключена на: {(_currentTheme == "noir" ? "Черный + Серебристый (#080808 / #BFC3C7)" : "Классическая (Золото + Винный)")}");
+        }
+
+        private void LoadThemePreference()
+        {
+            try
+            {
+                if (File.Exists(ThemeFilePath))
+                {
+                    string saved = File.ReadAllText(ThemeFilePath).Trim().ToLowerInvariant();
+                    if (saved == "noir" || saved == "classic")
+                    {
+                        _currentTheme = saved;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveThemePreference(string theme)
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(ThemeFilePath)!;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(ThemeFilePath, theme);
+            }
+            catch { }
+        }
+
+        private void ApplyTheme(string theme)
+        {
+            bool isNoir = theme == "noir";
+            BtnThemeToggle.Content = isNoir ? "🎨 Серебро" : "🎨 Классика";
+            BtnThemeToggle.ToolTip = isNoir
+                ? "Текущая тема: Черный + Серебристый (#080808 / #BFC3C7). Нажмите для переключения на классику."
+                : "Текущая тема: Классическая (Золото + Винный). Нажмите для переключения на Черный + Серебристый.";
+
+            if (ImgBackground != null)
+            {
+                ImgBackground.Opacity = isNoir ? 0.06 : 0.55;
+            }
+
+            if (isNoir)
+            {
+                // Черный #080808 + Серебристый #BFC3C7
+                SetThemeBrush("WindowBg", ColorFromHex("#080808"));
+                SetThemeBrush("WindowTint", ColorFromHex("#E6080808"));
+                SetThemeBrush("HeaderBg", ColorFromHex("#F0080808"));
+                SetThemeBrush("HeaderBorder", ColorFromHex("#26262B"));
+                SetThemeBrush("FooterBg", ColorFromHex("#F0080808"));
+                SetThemeBrush("FooterBorder", ColorFromHex("#26262B"));
+                SetThemeBrush("GlassPanelBg", ColorFromHex("#E60C0C0E"));
+                SetThemeBrush("GlassPanelBorder", ColorFromHex("#26262C"));
+                SetThemeBrush("AccentColor", ColorFromHex("#BFC3C7")); // Серебристый
+                SetThemeBrush("PrimaryBtnBg", ColorFromHex("#BFC3C7")); // Серебристый акцент
+                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#080808")); // Черный жирный текст
+                SetThemeBrush("SecondaryBtnBg", ColorFromHex("#141416"));
+                SetThemeBrush("SecondaryBtnBorder", ColorFromHex("#2E2E34"));
+                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#0E0E10"));
+                SetThemeBrush("ModernTextBoxBorder", ColorFromHex("#28282D"));
+                SetThemeBrush("ModernTextBoxFg", ColorFromHex("#F5F5F7"));
+                SetThemeBrush("LogBoxBg", ColorFromHex("#080808"));
+                SetThemeBrush("LogBoxBorder", ColorFromHex("#202024"));
+                SetThemeBrush("LogBoxFg", ColorFromHex("#A6ABB0"));
+                SetThemeBrush("TextPrimary", ColorFromHex("#F5F5F7"));
+                SetThemeBrush("TextSecondary", ColorFromHex("#8E9398"));
+                SetThemeBrush("TextMuted", ColorFromHex("#5E6266"));
+                SetThemeBrush("RecentItemBg", ColorFromHex("#121214"));
+                SetThemeBrush("RecentItemBorder", ColorFromHex("#202024"));
+                SetThemeBrush("ThumbnailBg", ColorFromHex("#080808"));
+                SetThemeBrush("ThumbnailBorder", ColorFromHex("#35BFC3C7"));
+                SetThemeBrush("ArrowBtnBg", ColorFromHex("#20BFC3C7"));
+                SetThemeBrush("ArrowBtnBorder", ColorFromHex("#40BFC3C7"));
+                SetThemeBrush("BadgeBg", ColorFromHex("#141416"));
+                SetThemeBrush("BadgeBorder", ColorFromHex("#2E2E34"));
+            }
+            else
+            {
+                // Классическая палитра (Винный + Золото)
+                SetThemeBrush("WindowBg", ColorFromHex("#191716"));
+                SetThemeBrush("WindowTint", ColorFromHex("#50191716"));
+                SetThemeBrush("HeaderBg", ColorFromHex("#C0181312"));
+                SetThemeBrush("HeaderBorder", ColorFromHex("#305C423E"));
+                SetThemeBrush("FooterBg", ColorFromHex("#C0181312"));
+                SetThemeBrush("FooterBorder", ColorFromHex("#305C423E"));
+                SetThemeBrush("GlassPanelBg", ColorFromHex("#A61C1716"));
+                SetThemeBrush("GlassPanelBorder", ColorFromHex("#405C423E"));
+                SetThemeBrush("AccentColor", ColorFromHex("#C2A878"));
+                SetThemeBrush("PrimaryBtnBg", ColorFromHex("#773344"));
+                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#C2A878"));
+                SetThemeBrush("SecondaryBtnBg", ColorFromHex("#402D2220"));
+                SetThemeBrush("SecondaryBtnBorder", ColorFromHex("#405C423E"));
+                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#C2A878"));
+                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#8014100F"));
+                SetThemeBrush("ModernTextBoxBorder", ColorFromHex("#505C423E"));
+                SetThemeBrush("ModernTextBoxFg", ColorFromHex("#F0EAE0"));
+                SetThemeBrush("LogBoxBg", ColorFromHex("#500E0B0A"));
+                SetThemeBrush("LogBoxBorder", ColorFromHex("#305C423E"));
+                SetThemeBrush("LogBoxFg", ColorFromHex("#9C9286"));
+                SetThemeBrush("TextPrimary", ColorFromHex("#F0EAE0"));
+                SetThemeBrush("TextSecondary", ColorFromHex("#8A7F74"));
+                SetThemeBrush("TextMuted", ColorFromHex("#6E645A"));
+                SetThemeBrush("RecentItemBg", ColorFromHex("#35201B19"));
+                SetThemeBrush("RecentItemBorder", ColorFromHex("#255C423E"));
+                SetThemeBrush("ThumbnailBg", ColorFromHex("#1A1413"));
+                SetThemeBrush("ThumbnailBorder", ColorFromHex("#35C2A878"));
+                SetThemeBrush("ArrowBtnBg", ColorFromHex("#25773344"));
+                SetThemeBrush("ArrowBtnBorder", ColorFromHex("#40773344"));
+                SetThemeBrush("BadgeBg", ColorFromHex("#352623"));
+                SetThemeBrush("BadgeBorder", ColorFromHex("#505C423E"));
+            }
+        }
+
+        private void SetThemeBrush(string key, Color color)
+        {
+            if (Resources.Contains(key) && Resources[key] is SolidColorBrush scb && !scb.IsFrozen)
+            {
+                scb.Color = color;
+            }
+            else
+            {
+                Resources[key] = new SolidColorBrush(color);
+            }
+        }
+
+        private static Color ColorFromHex(string hex)
+        {
+            return (Color)ColorConverter.ConvertFromString(hex);
         }
 
         private void BtnFirewall_Click(object sender, RoutedEventArgs e)

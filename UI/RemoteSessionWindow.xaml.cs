@@ -81,6 +81,7 @@ namespace VibeDesk.UI
             _client = client;
             _remoteDeviceId = remoteDeviceId;
             InitializeComponent();
+            ApplyThemeFromConfig();
 
             _stripeRenderer = new ZeroLagStripeRenderer(ImgScreen);
             _stripeRenderer.OnFirstFrameRendered += () =>
@@ -882,5 +883,20 @@ namespace VibeDesk.UI
         }
 
         private void BtnDisconnect_Click(object sender, RoutedEventArgs e) => Close();
+
+        private void ApplyThemeFromConfig()
+        {
+            try
+            {
+                string themeFile = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "theme.txt");
+                if (System.IO.File.Exists(themeFile) && System.IO.File.ReadAllText(themeFile).Trim().ToLowerInvariant() == "noir")
+                {
+                    TopToolBar.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#080808"));
+                    TopToolBar.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#26262B"));
+                    LblCodec.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#BFC3C7"));
+                }
+            }
+            catch { }
+        }
     }
 }

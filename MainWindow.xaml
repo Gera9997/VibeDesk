@@ -3,27 +3,60 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="VibeDesk" Height="640" Width="1020"
         WindowStartupLocation="CenterScreen"
-        Background="#191716"
-        Foreground="#F0EAE0"
+        Background="{DynamicResource WindowBg}"
+        Foreground="{DynamicResource TextPrimary}"
         FontFamily="Segoe UI"
         ResizeMode="CanMinimize"
         Icon="Assets/icon.ico">
 
     <Window.Resources>
+        <!-- Dynamic Palette Brushes for Live Theme Switching -->
+        <SolidColorBrush x:Key="WindowBg" Color="#191716"/>
+        <SolidColorBrush x:Key="WindowTint" Color="#50191716"/>
+        <SolidColorBrush x:Key="HeaderBg" Color="#C0181312"/>
+        <SolidColorBrush x:Key="HeaderBorder" Color="#305C423E"/>
+        <SolidColorBrush x:Key="FooterBg" Color="#C0181312"/>
+        <SolidColorBrush x:Key="FooterBorder" Color="#305C423E"/>
+        <SolidColorBrush x:Key="GlassPanelBg" Color="#A61C1716"/>
+        <SolidColorBrush x:Key="GlassPanelBorder" Color="#405C423E"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#C2A878"/>
+        <SolidColorBrush x:Key="PrimaryBtnBg" Color="#773344"/>
+        <SolidColorBrush x:Key="PrimaryBtnFg" Color="#C2A878"/>
+        <SolidColorBrush x:Key="SecondaryBtnBg" Color="#402D2220"/>
+        <SolidColorBrush x:Key="SecondaryBtnBorder" Color="#405C423E"/>
+        <SolidColorBrush x:Key="SecondaryBtnFg" Color="#C2A878"/>
+        <SolidColorBrush x:Key="ModernTextBoxBg" Color="#8014100F"/>
+        <SolidColorBrush x:Key="ModernTextBoxBorder" Color="#505C423E"/>
+        <SolidColorBrush x:Key="ModernTextBoxFg" Color="#F0EAE0"/>
+        <SolidColorBrush x:Key="LogBoxBg" Color="#500E0B0A"/>
+        <SolidColorBrush x:Key="LogBoxBorder" Color="#305C423E"/>
+        <SolidColorBrush x:Key="LogBoxFg" Color="#9C9286"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#F0EAE0"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#8A7F74"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#6E645A"/>
+        <SolidColorBrush x:Key="RecentItemBg" Color="#35201B19"/>
+        <SolidColorBrush x:Key="RecentItemBorder" Color="#255C423E"/>
+        <SolidColorBrush x:Key="ThumbnailBg" Color="#1A1413"/>
+        <SolidColorBrush x:Key="ThumbnailBorder" Color="#35C2A878"/>
+        <SolidColorBrush x:Key="ArrowBtnBg" Color="#25773344"/>
+        <SolidColorBrush x:Key="ArrowBtnBorder" Color="#40773344"/>
+        <SolidColorBrush x:Key="BadgeBg" Color="#352623"/>
+        <SolidColorBrush x:Key="BadgeBorder" Color="#505C423E"/>
+
         <!-- Glass Surface Panel (eliminates nested frames, allows background wallpaper to glow through) -->
         <Style x:Key="GlassPanel" TargetType="Border">
-            <Setter Property="Background" Value="#A61C1716"/>
-            <Setter Property="BorderBrush" Value="#405C423E"/>
+            <Setter Property="Background" Value="{DynamicResource GlassPanelBg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="24"/>
             <Setter Property="Margin" Value="8"/>
         </Style>
 
-        <!-- Primary Action Button: wine #773344 with aged gold #C2A878 text -->
+        <!-- Primary Action Button -->
         <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#773344"/>
-            <Setter Property="Foreground" Value="#C2A878"/>
+            <Setter Property="Background" Value="{DynamicResource PrimaryBtnBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBtnFg}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -40,22 +73,21 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#943F53"/>
+                    <Setter Property="Opacity" Value="0.88"/>
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#2D1C20"/>
-                    <Setter Property="Foreground" Value="#6A574E"/>
+                    <Setter Property="Opacity" Value="0.45"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Secondary Button: semi-transparent dark surface with subtle gold text -->
+        <!-- Secondary Button -->
         <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#402D2220"/>
-            <Setter Property="Foreground" Value="#C2A878"/>
+            <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryBtnFg}"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#405C423E"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBtnBorder}"/>
             <Setter Property="Padding" Value="12,6"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -73,8 +105,8 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#603D2E2B"/>
-                    <Setter Property="BorderBrush" Value="#60C2A878"/>
+                    <Setter Property="Opacity" Value="0.85"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -83,15 +115,15 @@
 
         <!-- Modern Input TextBox -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
-            <Setter Property="Background" Value="#8014100F"/>
-            <Setter Property="Foreground" Value="#F0EAE0"/>
-            <Setter Property="BorderBrush" Value="#505C423E"/>
+            <Setter Property="Background" Value="{DynamicResource ModernTextBoxBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ModernTextBoxFg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ModernTextBoxBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="14,9"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="CaretBrush" Value="#C2A878"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentColor}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -106,31 +138,31 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="#C2A878"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
         <!-- Dark Styled ComboBox (prevents white-on-white text issues) -->
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#251E1C"/>
-            <Setter Property="Foreground" Value="#F0EAE0"/>
-            <Setter Property="BorderBrush" Value="#4A3834"/>
+            <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBtnBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8,4"/>
         </Style>
 
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Background" Value="#251E1C"/>
-            <Setter Property="Foreground" Value="#F0EAE0"/>
+            <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="Padding" Value="6,4"/>
         </Style>
 
         <!-- Recent Connection Item -->
         <Style x:Key="RecentItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Background" Value="#35201B19"/>
+            <Setter Property="Background" Value="{DynamicResource RecentItemBg}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#255C423E"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource RecentItemBorder}"/>
             <Setter Property="Padding" Value="8,6"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -146,12 +178,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#50452C28"/>
-                                <Setter Property="BorderBrush" Value="#70C2A878"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#60773344"/>
-                                <Setter Property="BorderBrush" Value="#C2A878"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -169,10 +199,10 @@
 
     <Grid>
         <!-- Background Wallpaper: clearly visible, rich aesthetic pattern -->
-        <Image Source="Assets/background.jpg" Stretch="UniformToFill" Opacity="0.55" IsHitTestVisible="False"/>
+        <Image x:Name="ImgBackground" Source="Assets/background.jpg" Stretch="UniformToFill" Opacity="0.55" IsHitTestVisible="False"/>
 
         <!-- Soft dark tint for contrast, letting the pattern shine through -->
-        <Rectangle Fill="#50191716" IsHitTestVisible="False"/>
+        <Rectangle x:Name="RectTint" Fill="{DynamicResource WindowTint}" IsHitTestVisible="False"/>
 
         <Grid>
             <Grid.RowDefinitions>
@@ -183,7 +213,7 @@
             </Grid.RowDefinitions>
 
             <!-- Header: strict 3-column layout so version and buttons NEVER collide -->
-            <Border Grid.Row="0" Background="#C0181312" BorderBrush="#305C423E" BorderThickness="0,0,0,1" Padding="24,14">
+            <Border Grid.Row="0" Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource HeaderBorder}" BorderThickness="0,0,0,1" Padding="24,14">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -193,16 +223,20 @@
 
                     <!-- Left: Brand + Version badge -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="Vibe" Foreground="#C2A878" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
-                        <TextBlock Text="Desk" Foreground="#F0EAE0" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
-                        <Border Background="#352623" BorderBrush="#505C423E" BorderThickness="1" CornerRadius="5"
+                        <TextBlock Text="Vibe" Foreground="{DynamicResource AccentColor}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="Desk" Foreground="{DynamicResource TextPrimary}" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
+                        <Border Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1" CornerRadius="5"
                                 Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="TxtAppVersion" Text="v1.5.4" Foreground="#C2A878" FontSize="11" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="TxtAppVersion" Text="v1.5.5" Foreground="{DynamicResource AccentColor}" FontSize="11" FontWeight="SemiBold"/>
                         </Border>
                     </StackPanel>
 
                     <!-- Right: Quick actions -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Theme Switcher: located strictly to the left of the Firewall button -->
+                        <Button x:Name="BtnThemeToggle" Style="{StaticResource SecondaryButton}" Content="🎨 Серебро"
+                                Margin="0,0,10,0" Click="BtnThemeToggle_Click"
+                                ToolTip="Сменить тему оформления (Черный #080808 + Серебристый #BFC3C7 / Классика)"/>
                         <Button x:Name="BtnFirewall" Style="{StaticResource SecondaryButton}" Content="Брандмауэр"
                                 Margin="0,0,10,0" Click="BtnFirewall_Click"
                                 ToolTip="Разрешить входящие подключения в Брандмауэре Windows"/>
@@ -215,7 +249,7 @@
 
             <!-- Update Notification Banner -->
             <Border x:Name="BannerUpdate" Grid.Row="1" Visibility="Collapsed"
-                    Background="#D0261B1C" BorderBrush="#C2A878" BorderThickness="1"
+                    Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource AccentColor}" BorderThickness="1"
                     CornerRadius="8" Margin="14,10,14,0" Padding="16,12">
                 <DockPanel LastChildFill="True">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
@@ -228,16 +262,16 @@
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Доступна новая версия:" Foreground="#F0EAE0" FontWeight="Bold" FontSize="13"/>
-                            <TextBlock x:Name="TxtUpdateNewVersion" Text="v1.5.1" Foreground="#C2A878"
+                            <TextBlock Text="Доступна новая версия:" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" FontSize="13"/>
+                            <TextBlock x:Name="TxtUpdateNewVersion" Text="v1.5.1" Foreground="{DynamicResource AccentColor}"
                                        FontWeight="Bold" FontSize="13" Margin="8,0,0,0"/>
-                            <TextBlock x:Name="TxtUpdateSize" Text="" Foreground="#8A7F74"
+                            <TextBlock x:Name="TxtUpdateSize" Text="" Foreground="{DynamicResource TextSecondary}"
                                        FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <TextBlock x:Name="TxtUpdateStatus" Foreground="#8A7F74" FontSize="11" Margin="0,4,0,0"
+                        <TextBlock x:Name="TxtUpdateStatus" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,4,0,0"
                                    Text="Нажмите «Обновить» для загрузки новой версии и быстрого перезапуска."/>
                         <ProgressBar x:Name="PbUpdateProgress" Visibility="Collapsed" Height="4" Margin="0,8,0,0"
-                                     Foreground="#C2A878" Background="#261E1C" BorderThickness="0"/>
+                                     Foreground="{DynamicResource AccentColor}" Background="{DynamicResource LogBoxBg}" BorderThickness="0"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -258,16 +292,16 @@
                         </Grid.RowDefinitions>
 
                         <!-- Heading -->
-                        <TextBlock Grid.Row="0" Text="Недавние подключения" Foreground="#C2A878"
+                        <TextBlock Grid.Row="0" Text="Недавние подключения" Foreground="{DynamicResource AccentColor}"
                                    FontSize="14" FontWeight="SemiBold" Margin="0,0,0,16"/>
 
                         <!-- List / Empty state -->
                         <Grid Grid.Row="1">
                             <!-- Empty State -->
                             <StackPanel x:Name="PanelRecentEmpty" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <TextBlock Text="Нет недавних подключений" Foreground="#8A7F74" FontSize="13"
+                                <TextBlock Text="Нет недавних подключений" Foreground="{DynamicResource TextSecondary}" FontSize="13"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <TextBlock Text="Здесь появятся компьютеры после первого подключения." Foreground="#6E645A"
+                                <TextBlock Text="Здесь появятся компьютеры после первого подключения." Foreground="{DynamicResource TextMuted}"
                                            FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
                             </StackPanel>
 
@@ -293,7 +327,7 @@
 
                                             <!-- Thumbnail Container (Screenshot or Wallpaper) -->
                                             <Border Grid.Column="0" CornerRadius="6" ClipToBounds="True"
-                                                    Background="#1A1413" BorderBrush="#35C2A878" BorderThickness="1">
+                                                    Background="{DynamicResource ThumbnailBg}" BorderBrush="{DynamicResource ThumbnailBorder}" BorderThickness="1">
                                                 <Grid>
                                                     <Image Source="{Binding ThumbnailSource}" Stretch="UniformToFill"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -309,21 +343,21 @@
                                                     <Ellipse Width="8" Height="8" Fill="{Binding StatusBrush}"
                                                              ToolTip="{Binding StatusToolTip}"
                                                              Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding FormattedId}" Foreground="#F0EAE0"
+                                                    <TextBlock Text="{Binding FormattedId}" Foreground="{DynamicResource TextPrimary}"
                                                                FontSize="15" FontWeight="Bold" FontFamily="Consolas"
                                                                VerticalAlignment="Center"/>
                                                 </StackPanel>
 
                                                 <!-- Subtitle: status state and timestamp -->
-                                                <TextBlock Text="{Binding StatusSubtitle}" Foreground="#8A7F74"
+                                                <TextBlock Text="{Binding StatusSubtitle}" Foreground="{DynamicResource TextSecondary}"
                                                            FontSize="11" Margin="16,4,0,0"/>
                                             </StackPanel>
 
                                             <!-- Connect arrow button -->
                                             <Border Grid.Column="2" Width="26" Height="26" CornerRadius="13"
-                                                    Background="#25773344" BorderBrush="#40773344" BorderThickness="1"
+                                                    Background="{DynamicResource ArrowBtnBg}" BorderBrush="{DynamicResource ArrowBtnBorder}" BorderThickness="1"
                                                     VerticalAlignment="Center" Margin="0,0,2,0">
-                                                <TextBlock Text="→" Foreground="#C2A878" FontSize="13" FontWeight="Bold"
+                                                <TextBlock Text="→" Foreground="{DynamicResource AccentColor}" FontSize="13" FontWeight="Bold"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
                                             </Border>
                                         </Grid>
@@ -350,15 +384,15 @@
                             </StackPanel>
 
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Этот компьютер" Foreground="#8A7F74" FontSize="12" Margin="0,0,0,4"/>
+                                <TextBlock Text="Этот компьютер" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,4"/>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Border x:Name="IndicatorHost" Background="#C2A878" Width="10" Height="10"
+                                    <Border x:Name="IndicatorHost" Background="{DynamicResource AccentColor}" Width="10" Height="10"
                                             CornerRadius="5" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="TxtMyId" Text="--- ---" Foreground="#F0EAE0"
+                                    <TextBlock x:Name="TxtMyId" Text="--- ---" Foreground="{DynamicResource TextPrimary}"
                                                FontSize="30" FontWeight="Bold" FontFamily="Consolas"
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock x:Name="TxtHostStatus" Text="Ожидание подключения..." Foreground="#8A7F74"
+                                <TextBlock x:Name="TxtHostStatus" Text="Ожидание подключения..." Foreground="{DynamicResource TextSecondary}"
                                            FontSize="11" Margin="0,4,0,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -374,7 +408,7 @@
                             </Grid.RowDefinitions>
 
                             <!-- Heading -->
-                            <TextBlock Grid.Row="0" Text="Удалённое управление" Foreground="#C2A878"
+                            <TextBlock Grid.Row="0" Text="Удалённое управление" Foreground="{DynamicResource AccentColor}"
                                        FontSize="14" FontWeight="SemiBold" Margin="0,0,0,14"/>
 
                             <!-- Input Row -->
@@ -389,12 +423,12 @@
                                              Text="" KeyDown="TxtRemoteAddress_KeyDown"
                                              Margin="0,0,10,0"/>
                                     <Button Grid.Column="1" x:Name="BtnConnect"
-                                            Style="{StaticResource PrimaryButton}"
-                                            Content="Подключиться" Click="BtnConnect_Click"
-                                            Padding="22,10"/>
+                                             Style="{StaticResource PrimaryButton}"
+                                             Content="Подключиться" Click="BtnConnect_Click"
+                                             Padding="22,10"/>
                                 </Grid>
                                 <TextBlock Text="Введите Vibe ID или IP:порт удаленного компьютера."
-                                           Foreground="#6E645A" FontSize="11" Margin="2,6,0,0"/>
+                                           Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="2,6,0,0"/>
                             </StackPanel>
 
                             <!-- Journal (Seamless console without double nested frames) -->
@@ -405,7 +439,7 @@
                                 </Grid.RowDefinitions>
 
                                 <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                                    <TextBlock Text="Журнал" Foreground="#8A7F74" FontSize="12"
+                                    <TextBlock Text="Журнал" Foreground="{DynamicResource TextSecondary}" FontSize="12"
                                                FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Button Style="{StaticResource SecondaryButton}" Content="Копировать"
@@ -415,12 +449,12 @@
                                     </StackPanel>
                                 </DockPanel>
 
-                                <Border Grid.Row="1" Background="#500E0B0A" BorderBrush="#305C423E"
+                                <Border Grid.Row="1" Background="{DynamicResource LogBoxBg}" BorderBrush="{DynamicResource LogBoxBorder}"
                                         BorderThickness="1" CornerRadius="8" Padding="12">
                                     <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto">
                                         <TextBox x:Name="TxtClientLog"
                                                  Background="Transparent"
-                                                 Foreground="#9C9286"
+                                                 Foreground="{DynamicResource LogBoxFg}"
                                                  BorderThickness="0"
                                                  FontFamily="Consolas, Segoe UI Mono, monospace"
                                                  FontSize="11"
@@ -436,12 +470,12 @@
             </Grid>
 
             <!-- Footer: Minimal clean line -->
-            <Border Grid.Row="3" Background="#C0181312" BorderBrush="#305C423E" BorderThickness="0,1,0,0" Padding="20,8">
+            <Border Grid.Row="3" Background="{DynamicResource FooterBg}" BorderBrush="{DynamicResource FooterBorder}" BorderThickness="0,1,0,0" Padding="20,8">
                 <DockPanel>
                     <TextBlock x:Name="TxtFooterStatus" Text="VibeDesk P2P, UDP direct"
-                               Foreground="#6E645A" FontSize="11" VerticalAlignment="Center"/>
+                               Foreground="{DynamicResource TextMuted}" FontSize="11" VerticalAlignment="Center"/>
                     <TextBlock x:Name="TxtFooterVersion" Text="VibeDesk"
-                               Foreground="#6E645A" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                               Foreground="{DynamicResource TextMuted}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </DockPanel>
             </Border>
 

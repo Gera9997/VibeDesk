@@ -39,7 +39,7 @@
         </Grid.RowDefinitions>
 
         <!-- Top Tool Bar -->
-        <Border Grid.Row="0" Background="#18181F" BorderBrush="#282836" BorderThickness="0,0,0,1" Padding="12,6">
+        <Border x:Name="TopToolBar" Grid.Row="0" Background="#18181F" BorderBrush="#282836" BorderThickness="0,0,0,1" Padding="12,6">
             <DockPanel LastChildFill="False">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
                     <Border Background="#00C853" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"/>
@@ -49,7 +49,7 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <TextBlock Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox x:Name="CmbStreamCodec" Width="170" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="11" Margin="0,0,12,0">
                         <ComboBoxItem Content="⚡ Турбо-MJPEG (Полосы)"/>
                         <ComboBoxItem Content="🎬 Видеопоток (Full Frame)"/>
