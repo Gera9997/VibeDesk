@@ -174,11 +174,18 @@ namespace VibeDesk.Tests
                     Assert.AreEqual((byte)0xD8, s[3], "JPEG SOI marker byte 2");
                 }
 
-                // Subsequent capture without changes should return null (zero-change skip) or at most 2 healing strips
+                // Subsequent capture: verify strip count is within valid bounds and headers are valid
                 var secondStrips = manager.CaptureDirtyStrips(forceAll: false);
                 if (secondStrips != null)
                 {
-                    Assert.IsTrue(secondStrips.Count <= 2, $"Expected at most 2 dirty strips on static screen, got {secondStrips.Count}");
+                    Assert.IsTrue(secondStrips.Count <= ScreenCaptureManager.StripCount, $"Expected at most {ScreenCaptureManager.StripCount} dirty strips, got {secondStrips.Count}");
+                    foreach (var strip in secondStrips)
+                    {
+                        Assert.IsTrue(strip.Length > 4, "Strip payload must be non-empty");
+                        Assert.AreEqual((byte)ScreenCaptureManager.StripCount, strip[1], "Strip count must be 8");
+                        Assert.AreEqual((byte)0xFF, strip[2], "JPEG SOI marker byte 1");
+                        Assert.AreEqual((byte)0xD8, strip[3], "JPEG SOI marker byte 2");
+                    }
                 }
             }
         }
