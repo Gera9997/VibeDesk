@@ -242,6 +242,139 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
+        public void TestXorInstantRecoveryZeroLatency()
+        {
+            var reassembler = new FrameReassembler();
+            AssembledStripe completedStripe = default;
+            bool stripeReadyFired = false;
+            bool nackFired = false;
+
+            reassembler.OnStripeReady += stripe =>
+            {
+                stripeReadyFired = true;
+                completedStripe = stripe;
+            };
+
+            reassembler.OnSendNackRequested += (fId, missing) =>
+            {
+                nackFired = true;
+            };
+
+            // Создаем 2500 байт данных: 3 чанка (1000, 1000, 500)
+            byte[] originalData = new byte[2500];
+            for (int i = 0; i < originalData.Length; i++) originalData[i] = (byte)(i * 7 + 13);
+
+            ushort totalChunks = 3;
+            uint frameId = 42;
+            byte stripeIndex = 1;
+
+            // Вычисляем XOR accumulator
+            byte[] xorAcc = new byte[1000];
+            for (int i = 0; i < 1000; i++) xorAcc[i] ^= originalData[i];
+            for (int i = 0; i < 1000; i++) xorAcc[i] ^= originalData[1000 + i];
+            for (int i = 0; i < 500; i++) xorAcc[i] ^= originalData[2000 + i];
+
+            // Создаем пакеты чанков
+            byte[] p0 = new byte[ProtocolConstants.VideoHeaderSize + 1000];
+            new VideoChunkHeader(PacketType.VideoChunk, stripeIndex, frameId, 0, totalChunks, 100, 100).WriteTo(p0);
+            Array.Copy(originalData, 0, p0, ProtocolConstants.VideoHeaderSize, 1000);
+
+            // Chunk 1 ТЕРЯЕТСЯ В СЕТИ!
+
+            byte[] p2 = new byte[ProtocolConstants.VideoHeaderSize + 500];
+            new VideoChunkHeader(PacketType.VideoChunk, stripeIndex, frameId, 2, totalChunks, 100, 100).WriteTo(p2);
+            Array.Copy(originalData, 2000, p2, ProtocolConstants.VideoHeaderSize, 500);
+
+            // XOR паритет пакет
+            byte[] pxor = new byte[ProtocolConstants.VideoHeaderSize + 2 + 1000];
+            new VideoChunkHeader(PacketType.VideoXorParity, stripeIndex, frameId, totalChunks, totalChunks, 100, 100).WriteTo(pxor);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(pxor.AsSpan(ProtocolConstants.VideoHeaderSize, 2), 500);
+            Array.Copy(xorAcc, 0, pxor, ProtocolConstants.VideoHeaderSize + 2, 1000);
+
+            // Обрабатываем chunk 0
+            reassembler.ProcessChunk(p0);
+            Assert.IsFalse(stripeReadyFired);
+
+            // Обрабатываем chunk 2 (chunk 1 потерян)
+            reassembler.ProcessChunk(p2);
+            Assert.IsFalse(stripeReadyFired);
+
+            // Обрабатываем XOR-пакет: мгновенное 0 мс восстановление чанка 1!
+            reassembler.ProcessChunk(pxor);
+
+            Assert.IsTrue(stripeReadyFired, "Stripe must be recovered instantly via XOR parity");
+            Assert.IsFalse(nackFired, "NACK must NOT be fired for single packet loss with XOR parity");
+            Assert.AreEqual(2500, completedStripe.DataLength);
+
+            byte[] recoveredBytes = completedStripe.ToByteArray();
+            CollectionAssert.AreEqual(originalData, recoveredBytes, "Recovered stripe payload must perfectly match original");
+        }
+
+        [TestMethod]
+        public void TestMultiLossTriggersFastNack()
+        {
+            var reassembler = new FrameReassembler();
+            uint nackedFrameId = 0;
+            ushort[]? requestedChunks = null;
+
+            reassembler.OnSendNackRequested += (fId, missing) =>
+            {
+                nackedFrameId = fId;
+                requestedChunks = missing.ToArray();
+            };
+
+            // 5 чанков (0, 1, 2, 3, 4)
+            ushort totalChunks = 5;
+            uint frameId = 88;
+            byte stripeIndex = 2;
+
+            byte[] p0 = new byte[ProtocolConstants.VideoHeaderSize + 100];
+            new VideoChunkHeader(PacketType.VideoChunk, stripeIndex, frameId, 0, totalChunks, 0, 50).WriteTo(p0);
+
+            byte[] p2 = new byte[ProtocolConstants.VideoHeaderSize + 100];
+            new VideoChunkHeader(PacketType.VideoChunk, stripeIndex, frameId, 2, totalChunks, 0, 50).WriteTo(p2);
+
+            byte[] p4 = new byte[ProtocolConstants.VideoHeaderSize + 100];
+            new VideoChunkHeader(PacketType.VideoChunk, stripeIndex, frameId, 4, totalChunks, 0, 50).WriteTo(p4);
+
+            // Chunk 1 и Chunk 3 потерялись (2 потери)
+            reassembler.ProcessChunk(p0);
+            reassembler.ProcessChunk(p2); // дырка: 1 отсутствует
+            reassembler.ProcessChunk(p4); // дырка: 3 отсутствует
+
+            Assert.AreEqual(frameId, nackedFrameId);
+            Assert.IsNotNull(requestedChunks);
+            CollectionAssert.Contains(requestedChunks, (ushort)1);
+            CollectionAssert.Contains(requestedChunks, (ushort)3);
+        }
+
+        [TestMethod]
+        public void TestTwoPhaseMotionAndRefinementTracker()
+        {
+            var tracker = new StripeDirtyAndRefinementTracker(8, 1920 * 4);
+            byte[] rawBgra = new byte[1920 * 4];
+            Array.Fill(rawBgra, (byte)100);
+
+            // 1. Первый кадр: изменился -> режим активного движения (качество снижено на 30)
+            bool dirty1 = tracker.EvaluateStripe(0, rawBgra, nowMs: 1000, presetHighQuality: 80, forceFull: false, out int q1);
+            Assert.IsTrue(dirty1);
+            Assert.AreEqual(50, q1, "Motion quality must be 50 (80 - 30)");
+
+            // 2. Второй кадр через 16 мс (движение прекратилось, экран тот же) -> не отправляется
+            bool dirty2 = tracker.EvaluateStripe(0, rawBgra, nowMs: 1016, presetHighQuality: 80, forceFull: false, out int q2);
+            Assert.IsFalse(dirty2, "Static stripe must not be resent immediately");
+
+            // 3. Через 160 мс покоя (>= RefinementDelayMs 150 мс) -> срабатывает чистовая доводка (Refinement)
+            bool dirty3 = tracker.EvaluateStripe(0, rawBgra, nowMs: 1180, presetHighQuality: 80, forceFull: false, out int q3);
+            Assert.IsTrue(dirty3, "Refinement stripe must be triggered after 150 ms of stillness");
+            Assert.AreEqual(80, q3, "Refinement quality must be full preset quality (80)");
+
+            // 4. Следующий кадр после чистовой доводки -> флаг сброшен, полоса в покое
+            bool dirty4 = tracker.EvaluateStripe(0, rawBgra, nowMs: 1200, presetHighQuality: 80, forceFull: false, out int q4);
+            Assert.IsFalse(dirty4, "Stripe must remain idle after refinement");
+        }
+
+        [TestMethod]
         public void TestMouseNormalizationInvariance()
         {
             // Verify that clicking at 50% of the screen produces (0.5, 0.5) regardless of whether

@@ -18,6 +18,7 @@ namespace VibeDesk.UI
     public partial class RemoteSessionWindow : Window
     {
         private readonly VibeClient _client;
+        private readonly ZeroLagStripeRenderer _stripeRenderer;
         private readonly DispatcherTimer _statsTimer;
         private bool _isFullscreen = false;
         private WindowStyle _previousStyle = WindowStyle.SingleBorderWindow;
@@ -57,6 +58,13 @@ namespace VibeDesk.UI
             _remoteDeviceId = remoteDeviceId;
             InitializeComponent();
 
+            _stripeRenderer = new ZeroLagStripeRenderer(ImgScreen);
+            _stripeRenderer.OnFirstFrameRendered += () =>
+            {
+                Dispatcher.InvokeAsync(() => OverlayConnecting.Visibility = Visibility.Collapsed);
+            };
+
+            _client.OnStripeReady += stripe => _stripeRenderer.EnqueueAssembledStripe(stripe);
             _client.OnFrameReceived += OnFrameReceived;
             _client.OnDisconnected += OnDisconnected;
             _client.OnClipboardReceived += OnClipboardReceived;
@@ -90,6 +98,7 @@ namespace VibeDesk.UI
                 _client.OnCursorPositionReceived -= OnCursorPositionReceived;
                 _client.Disconnect();
                 _renderThread?.Join(200);
+                _stripeRenderer.Dispose();
             };
         }
 
@@ -306,7 +315,8 @@ namespace VibeDesk.UI
 
         public void SaveThumbnail()
         {
-            if (string.IsNullOrWhiteSpace(_remoteDeviceId) || _canvasBitmap == null) return;
+            var targetBitmap = _stripeRenderer.CanvasBitmap ?? _canvasBitmap;
+            if (string.IsNullOrWhiteSpace(_remoteDeviceId) || targetBitmap == null) return;
             try
             {
                 string thumbDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeDesk", "thumbnails");
@@ -319,7 +329,7 @@ namespace VibeDesk.UI
                 var dv = new DrawingVisual();
                 using (var dc = dv.RenderOpen())
                 {
-                    dc.DrawImage(_canvasBitmap, new Rect(0, 0, targetW, targetH));
+                    dc.DrawImage(targetBitmap, new Rect(0, 0, targetW, targetH));
                 }
                 rtb.Render(dv);
 
@@ -375,8 +385,11 @@ namespace VibeDesk.UI
                     return;
                 }
 
-                double scaleX = _canvasW > 0 && screenW > 0 ? (double)_canvasW / screenW : 1.0;
-                double scaleY = _canvasH > 0 && screenH > 0 ? (double)_canvasH / screenH : 1.0;
+                int effectiveW = _stripeRenderer.CanvasWidth > 0 ? _stripeRenderer.CanvasWidth : _canvasW;
+                int effectiveH = _stripeRenderer.CanvasHeight > 0 ? _stripeRenderer.CanvasHeight : _canvasH;
+
+                double scaleX = effectiveW > 0 && screenW > 0 ? (double)effectiveW / screenW : 1.0;
+                double scaleY = effectiveH > 0 && screenH > 0 ? (double)effectiveH / screenH : 1.0;
 
                 Canvas.SetLeft(RemoteCursor, x * scaleX);
                 Canvas.SetTop(RemoteCursor, y * scaleY);

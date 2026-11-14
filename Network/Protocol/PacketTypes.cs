@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Text;
 using VibeDesk.Input;
 
@@ -18,7 +19,71 @@ namespace VibeDesk.Network.Protocol
         VibePunchAck = 10,
         CursorPosition = 11,
         PictureLossIndication = 12,
-        StreamMode = 13
+        StreamMode = 13,
+        VideoXorParity = 14, // Избыточный XOR-чанк для мгновенного восстановления 1 потери за 0 мс
+        VideoNack = 15,      // Запрос повторной отправки конкретных чанков
+        VideoChunk = 16      // Новый 14-байтовый чанк полосы со StripeIndex и StripeY
+    }
+
+    public static class ProtocolConstants
+    {
+        // 1000 байт полезной нагрузки + 14 байт заголовка = 1014 байт (гарантированно проходит лимит LiteNetLib 1023 байта и любой MTU)
+        public const int MaxChunkPayloadSize = 1000;
+        public const int VideoHeaderSize = 14;
+        public const int SocketBufferSize = 1024 * 1024; // 1 МБ (защита от GC-пауз без Bufferbloat)
+    }
+
+    public readonly struct VideoChunkHeader
+    {
+        public readonly PacketType Type;      // 1 байт
+        public readonly byte StripeIndex;     // 1 байт (индекс полосы 0..31)
+        public readonly uint FrameId;         // 4 байта (монотонный ID полосы)
+        public readonly ushort ChunkIndex;    // 2 байта (0..TotalChunks-1, для XOR = TotalChunks)
+        public readonly ushort TotalChunks;   // 2 байта (количество основных чанков данных)
+        public readonly ushort StripeY;       // 2 байта (координата Y на экране)
+        public readonly ushort StripeHeight;  // 2 байта (высота полосы)
+
+        public VideoChunkHeader(
+            PacketType type,
+            byte stripeIndex,
+            uint frameId,
+            ushort chunkIndex,
+            ushort totalChunks,
+            ushort stripeY,
+            ushort stripeHeight)
+        {
+            Type = type;
+            StripeIndex = stripeIndex;
+            FrameId = frameId;
+            ChunkIndex = chunkIndex;
+            TotalChunks = totalChunks;
+            StripeY = stripeY;
+            StripeHeight = stripeHeight;
+        }
+
+        public void WriteTo(Span<byte> buffer)
+        {
+            buffer[0] = (byte)Type;
+            buffer[1] = StripeIndex;
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.Slice(2, 4), FrameId);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(6, 2), ChunkIndex);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(8, 2), TotalChunks);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(10, 2), StripeY);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(12, 2), StripeHeight);
+        }
+
+        public static VideoChunkHeader ReadFrom(ReadOnlySpan<byte> buffer)
+        {
+            return new VideoChunkHeader(
+                (PacketType)buffer[0],
+                buffer[1],
+                BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(2, 4)),
+                BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(6, 2)),
+                BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(8, 2)),
+                BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(10, 2)),
+                BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(12, 2))
+            );
+        }
     }
 
     public static class PacketBuilder
@@ -172,6 +237,19 @@ namespace VibeDesk.Network.Protocol
         public static byte[] CreateStreamMode(byte mode)
         {
             return new byte[] { (byte)PacketType.StreamMode, mode };
+        }
+
+        public static byte[] CreateVideoNack(uint frameId, ReadOnlySpan<ushort> missingChunks)
+        {
+            byte[] packet = new byte[7 + missingChunks.Length * 2];
+            packet[0] = (byte)PacketType.VideoNack;
+            BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(1, 4), frameId);
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(5, 2), (ushort)missingChunks.Length);
+            for (int i = 0; i < missingChunks.Length; i++)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(7 + i * 2, 2), missingChunks[i]);
+            }
+            return packet;
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using LiteNetLib;
@@ -30,6 +31,7 @@ namespace VibeDesk.Network
         public event Action? OnConnected;
         public event Action? OnDisconnected;
         public event Action<byte[]>? OnFrameReceived;
+        public event Action<AssembledStripe>? OnStripeReady;
         public event Action<int, int>? OnScreenInfoReceived;
         public event Action<string>? OnClipboardReceived;
         public event Action<IPEndPoint>? OnPunchReceived;
@@ -130,6 +132,8 @@ namespace VibeDesk.Network
 
             _reassembler = new FrameReassembler();
             _reassembler.OnPliNeeded += SendPli;
+            _reassembler.OnStripeReady += stripe => OnStripeReady?.Invoke(stripe);
+            _reassembler.OnSendNackRequested += (frameId, missing) => SendVideoNack(frameId, missing);
             _reassembler.OnFrameReadyWithId += (frameId, frameBytes) =>
             {
                 _framesThisSecond++;
@@ -212,6 +216,7 @@ namespace VibeDesk.Network
         {
             if (_pollThread != null && _pollThread.IsAlive) return;
 
+            ConfigureSocketBuffers(_netClient);
             _isRunning = true;
             _pollThread = new Thread(ClientPollLoop)
             {
@@ -293,6 +298,9 @@ namespace VibeDesk.Network
                 {
                     _netClient.PollEvents();
 
+                    long nowMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency;
+                    _reassembler.CheckPendingNacksAndTimeouts(nowMs);
+
                     if (_fpsStopwatch.ElapsedMilliseconds >= 1000)
                     {
                         CurrentFps = _framesThisSecond;
@@ -323,10 +331,12 @@ namespace VibeDesk.Network
             switch (packetType)
             {
                 case PacketType.FrameChunk:
+                case PacketType.VideoChunk:
+                case PacketType.VideoXorParity:
                     // Raw chunk including type byte
                     byte[] rawData = reader.GetRemainingBytes();
                     byte[] withType = new byte[rawData.Length + 1];
-                    withType[0] = (byte)PacketType.FrameChunk;
+                    withType[0] = (byte)packetType;
                     Buffer.BlockCopy(rawData, 0, withType, 1, rawData.Length);
                     _reassembler.ProcessChunk(withType);
                     break;
@@ -467,6 +477,29 @@ namespace VibeDesk.Network
                             _netClient.SendUnconnectedMessage(packet, new IPEndPoint(target.Address, p));
                         }
                     }
+                }
+            }
+            catch { }
+        }
+
+        public void SendVideoNack(uint frameId, ReadOnlyMemory<ushort> missingChunkIndices)
+        {
+            if (IsConnected && missingChunkIndices.Length > 0)
+            {
+                byte[] nackPacket = PacketBuilder.CreateVideoNack(frameId, missingChunkIndices.Span);
+                _serverPeer!.Send(nackPacket, DeliveryMethod.Unreliable);
+            }
+        }
+
+        private static void ConfigureSocketBuffers(NetManager netManager)
+        {
+            try
+            {
+                var field = typeof(NetManager).GetField("_udpSocketv4", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (field?.GetValue(netManager) is Socket socket)
+                {
+                    socket.SendBufferSize = ProtocolConstants.SocketBufferSize;
+                    socket.ReceiveBufferSize = ProtocolConstants.SocketBufferSize;
                 }
             }
             catch { }

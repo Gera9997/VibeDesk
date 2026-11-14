@@ -21,6 +21,7 @@ namespace VibeDesk.Network
 
         private readonly EventBasedNetListener _listener;
         private readonly NetManager _netServer;
+        private readonly HostRetransmitAndSender _retransmitSender = new();
         private ScreenCaptureManager? _captureManager;
         private NetPeer? _connectedPeer;
 
@@ -238,6 +239,8 @@ namespace VibeDesk.Network
                 return false;
             }
 
+            ConfigureSocketBuffers(_netServer);
+
             // Enable 1ms multimedia timer resolution on Windows for precise 25-120 FPS
             try { Win32.timeBeginPeriod(1); } catch { }
 
@@ -374,6 +377,9 @@ namespace VibeDesk.Network
                                 var strips = _captureManager.CaptureDirtyStrips(forceAll: forceKeyframe);
                                 if (strips != null && strips.Count > 0)
                                 {
+                                    int totalStrips = ScreenCaptureManager.StripCount;
+                                    int stripH = ScreenHeight / totalStrips;
+
                                     foreach (var stripData in strips)
                                     {
                                         if (peer.ConnectionState != ConnectionState.Connected) break;
@@ -382,20 +388,19 @@ namespace VibeDesk.Network
                                         _lastSentFrameId = stripFrameId;
                                         _lastFrameSentTicks = nowTicks;
 
-                                        int totalLength = stripData.Length;
-                                        int chunkSize = PacketBuilder.MaxChunkPayloadSize;
-                                        ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+                                        byte stripeIdx = stripData.Length >= 1 ? stripData[0] : (byte)0;
+                                        ushort stripeY = (ushort)(stripeIdx * stripH);
+                                        ushort stripeHeight = (ushort)stripH;
 
-                                        for (ushort i = 0; i < totalChunks; i++)
-                                        {
-                                            int offset = i * chunkSize;
-                                            int length = Math.Min(chunkSize, totalLength - offset);
-                                            byte[] chunkPacket = PacketBuilder.CreateFrameChunk(stripFrameId, i, totalChunks, stripData, offset, length);
-
-                                            peer.Send(chunkPacket, DeliveryMethod.Unreliable);
-                                            bytesSentThisSecond += chunkPacket.Length;
-                                            tokenBucket -= chunkPacket.Length;
-                                        }
+                                        _retransmitSender.SendStripeWithXorAndCache(
+                                            peer,
+                                            stripeIdx,
+                                            stripFrameId,
+                                            stripeY,
+                                            stripeHeight,
+                                            stripData,
+                                            ref bytesSentThisSecond,
+                                            ref tokenBucket);
                                     }
 
                                     _netServer.TriggerUpdate();
@@ -513,7 +518,38 @@ namespace VibeDesk.Network
                         OnStatusChanged?.Invoke($"[Режим стрима изменен] {(_streamMode == 0 ? "⚡ Турбо-MJPEG (Полосы)" : "🎬 Видеопоток (Full Frame)")}");
                     }
                     break;
+
+                case PacketType.VideoNack:
+                    if (reader.AvailableBytes >= 6)
+                    {
+                        uint nackFrameId = reader.GetUInt();
+                        ushort count = reader.GetUShort();
+                        if (count > 0 && reader.AvailableBytes >= count * 2)
+                        {
+                            ushort[] missingIndices = new ushort[count];
+                            for (int i = 0; i < count; i++)
+                            {
+                                missingIndices[i] = reader.GetUShort();
+                            }
+                            _retransmitSender.HandleNackRequest(peer, nackFrameId, missingIndices);
+                        }
+                    }
+                    break;
             }
+        }
+
+        private static void ConfigureSocketBuffers(NetManager netManager)
+        {
+            try
+            {
+                var field = typeof(NetManager).GetField("_udpSocketv4", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (field?.GetValue(netManager) is Socket socket)
+                {
+                    socket.SendBufferSize = ProtocolConstants.SocketBufferSize;
+                    socket.ReceiveBufferSize = ProtocolConstants.SocketBufferSize;
+                }
+            }
+            catch { }
         }
 
         private void HandleInputEvent(NetPacketReader reader)

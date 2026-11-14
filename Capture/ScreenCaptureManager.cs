@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -21,8 +22,9 @@ namespace VibeDesk.Capture
         private Bitmap? _workBitmap;
         private Graphics? _workGraphics;
 
-        private readonly ulong[] _stripHashes = new ulong[StripCount];
+        private readonly StripeDirtyAndRefinementTracker _tracker = new(StripCount);
         private int _forceSweepIndex = 0;
+        private volatile int _currentQuality = 60;
 
         public float ResolutionScale { get; private set; } = 0.85f;
         public string ActiveEngineName => _capturer.Name;
@@ -32,9 +34,10 @@ namespace VibeDesk.Capture
         public ScreenCaptureManager(int jpegQuality = 60, float scale = 0.85f)
         {
             ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
+            _currentQuality = Math.Clamp(jpegQuality, 10, 100);
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
             _encoderParams = new EncoderParameters(1);
-            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(jpegQuality, 10, 100));
+            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)_currentQuality);
 
             for (int i = 0; i < StripCount; i++)
             {
@@ -57,7 +60,8 @@ namespace VibeDesk.Capture
 
         public void SetQuality(int quality)
         {
-            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(quality, 10, 100));
+            _currentQuality = Math.Clamp(quality, 10, 100);
+            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)_currentQuality);
         }
 
         public void SetScale(float scale)
@@ -66,13 +70,13 @@ namespace VibeDesk.Capture
             if (Math.Abs(clamped - ResolutionScale) > 0.01f)
             {
                 ResolutionScale = clamped;
-                Array.Clear(_stripHashes, 0, _stripHashes.Length);
+                _tracker.Reset();
             }
         }
 
         public void ResetForceFrame()
         {
-            Array.Clear(_stripHashes, 0, _stripHashes.Length);
+            _tracker.Reset();
         }
 
         /// <summary>
@@ -124,7 +128,7 @@ namespace VibeDesk.Capture
                     _workGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
                     _workGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
                     _workGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-                    Array.Clear(_stripHashes, 0, _stripHashes.Length);
+                    _tracker.Reset();
                 }
 
                 _workGraphics!.DrawImage(bmp, new Rectangle(0, 0, targetW, targetH), new Rectangle(0, 0, bmp.Width, bmp.Height), GraphicsUnit.Pixel);
@@ -139,32 +143,27 @@ namespace VibeDesk.Capture
 
             BitmapData fullData = sourceBmp.LockBits(new Rectangle(0, 0, targetW, targetH), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
             bool[] isStripDirty = new bool[StripCount];
+            int[] stripQualities = new int[StripCount];
             byte[]?[] stripResults = new byte[]?[StripCount];
+            long nowMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency;
 
             try
             {
                 byte* basePtr = (byte*)fullData.Scan0;
                 int stride = fullData.Stride;
+                int stripeByteLen = stripH * stride;
 
                 for (int s = 0; s < StripCount; s++)
                 {
                     int startY = s * stripH;
-                    ulong hash = 14695981039346656037UL;
+                    byte* sliceScan0 = basePtr + startY * stride;
+                    var stripeSpan = new ReadOnlySpan<byte>(sliceScan0, stripeByteLen);
 
-                    for (int y = startY; y < startY + stripH; y += 2)
+                    bool forceThisStrip = forceAll || (s == sweepStrip);
+                    if (_tracker.EvaluateStripe(s, stripeSpan, nowMs, _currentQuality, forceThisStrip, out int targetQ))
                     {
-                        uint* row = (uint*)(basePtr + y * stride);
-                        for (int x = 0; x < targetW; x += 4)
-                        {
-                            hash ^= row[x];
-                            hash *= 1099511628211UL;
-                        }
-                    }
-
-                    if (forceAll || s == sweepStrip || _stripHashes[s] != hash)
-                    {
-                        _stripHashes[s] = hash;
                         isStripDirty[s] = true;
+                        stripQualities[s] = targetQ;
                     }
                 }
 
@@ -177,13 +176,16 @@ namespace VibeDesk.Capture
                     IntPtr sliceScan0 = (IntPtr)(basePtr + startY * stride);
                     using var sliceBmp = new Bitmap(targetW, stripH, stride, PixelFormat.Format32bppRgb, sliceScan0);
 
+                    using var encParams = new EncoderParameters(1);
+                    encParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)stripQualities[s]);
+
                     var stream = _stripStreams[s];
                     lock (stream)
                     {
                         stream.SetLength(0);
                         stream.WriteByte((byte)s);
                         stream.WriteByte((byte)StripCount);
-                        sliceBmp.Save(stream, _jpegCodec, _encoderParams);
+                        sliceBmp.Save(stream, _jpegCodec, encParams);
                         stripResults[s] = stream.ToArray();
                     }
                 });
