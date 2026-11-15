@@ -98,6 +98,17 @@
                       Visibility="Collapsed"/>
             </Canvas>
 
+            <!-- Game Mode Floating Hint -->
+            <Border x:Name="OverlayGameModeHint"
+                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                    Margin="0,12,0,0"
+                    Background="#E6101014" BorderBrush="#00C853" BorderThickness="1"
+                    CornerRadius="6" Padding="14,6"
+                    Visibility="Collapsed" IsHitTestVisible="False">
+                <TextBlock Text="🎮 Игровой режим активен (3D-мышь) — Нажмите ESC или F10 для выхода"
+                           Foreground="#E0E0E0" FontSize="11" FontWeight="SemiBold"/>
+            </Border>
+
             <!-- Loading overlay -->
             <Border x:Name="OverlayConnecting" Background="#CC0D0D11" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">

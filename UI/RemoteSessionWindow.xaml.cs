@@ -36,6 +36,8 @@ namespace VibeDesk.UI
         private Win32.LowLevelKeyboardProc? _keyboardHookProc = null;
         private IntPtr _keyboardHookHandle = IntPtr.Zero;
         private bool _isRawInputRegistered = false;
+        private Point _centerScreenPoint;
+        private bool _isResettingPos = false;
 
         // Хранит только самый последний полученный пакет для каждой из 8 полос
         private readonly byte[]?[] _latestStripBytes = new byte[]?[ScreenCaptureManager.StripCount];
@@ -760,7 +762,25 @@ namespace VibeDesk.UI
         {
             if (_isGameModeActive)
             {
-                // В игровом режиме относительные движения обрабатываются напрямую через Raw Input (WM_INPUT)
+                if (_isResettingPos)
+                {
+                    _isResettingPos = false;
+                    return;
+                }
+
+                if (ImgScreen.ActualWidth > 0 && ImgScreen.ActualHeight > 0)
+                {
+                    Point curScreen = ImgScreen.PointToScreen(e.GetPosition(ImgScreen));
+                    int dx = (int)(curScreen.X - _centerScreenPoint.X);
+                    int dy = (int)(curScreen.Y - _centerScreenPoint.Y);
+
+                    if (dx != 0 || dy != 0)
+                    {
+                        _client.SendMouseRelative(dx, dy);
+                        _isResettingPos = true;
+                        Win32.SetCursorPos((int)_centerScreenPoint.X, (int)_centerScreenPoint.Y);
+                    }
+                }
                 return;
             }
 
@@ -994,43 +1014,60 @@ namespace VibeDesk.UI
         private void EnableGameMode()
         {
             _isGameModeActive = true;
+            _isResettingPos = false;
             BtnGameMode.Content = "🎮 Активен";
             BtnGameMode.Background = new SolidColorBrush(Color.FromRgb(46, 125, 50));
-            BtnGameMode.ToolTip = "Игровой режим АКТИВЕН (мышь захвачена, Raw Input 1000 Гц). Нажмите или Ctrl+Alt+G для выхода";
+            BtnGameMode.ToolTip = "Игровой режим АКТИВЕН. Нажмите ESC или F10 для выхода";
             ImgScreen.Cursor = Cursors.None;
             RemoteCursor.Visibility = Visibility.Collapsed;
 
-            RegisterRawInput();
+            if (OverlayGameModeHint != null)
+            {
+                OverlayGameModeHint.Visibility = Visibility.Visible;
+            }
+
+            if (ImgScreen.ActualWidth > 0 && ImgScreen.ActualHeight > 0)
+            {
+                _centerScreenPoint = ImgScreen.PointToScreen(new Point(ImgScreen.ActualWidth / 2, ImgScreen.ActualHeight / 2));
+                Win32.SetCursorPos((int)_centerScreenPoint.X, (int)_centerScreenPoint.Y);
+            }
+
             UpdateClipCursor();
         }
 
         private void DisableGameMode()
         {
             _isGameModeActive = false;
+            _isResettingPos = false;
             BtnGameMode.Content = "🎮 Игра";
             BtnGameMode.ClearValue(BackgroundProperty);
-            BtnGameMode.ToolTip = "Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)";
+            BtnGameMode.ToolTip = "Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (F10 / ESC)";
+
+            if (OverlayGameModeHint != null)
+            {
+                OverlayGameModeHint.Visibility = Visibility.Collapsed;
+            }
 
             Win32.ClipCursor(IntPtr.Zero);
             ImgScreen.Cursor = _isRemoteCursorVisible ? Cursors.Arrow : Cursors.None;
-
-            UnregisterRawInput();
         }
 
         private void UpdateClipCursor()
         {
             try
             {
-                if (!_isGameModeActive || !IsActive || ImgScreen.ActualWidth <= 0 || ImgScreen.ActualHeight <= 0) return;
+                if (!_isGameModeActive || !IsActive || ActualWidth <= 0 || ActualHeight <= 0) return;
 
-                Point topLeft = ImgScreen.PointToScreen(new Point(0, 0));
-                Point botRight = ImgScreen.PointToScreen(new Point(ImgScreen.ActualWidth, ImgScreen.ActualHeight));
+                Point topLeft = PointToScreen(new Point(0, 0));
+                Point botRight = PointToScreen(new Point(ActualWidth, ActualHeight));
                 var rect = new Win32.RECT((int)topLeft.X, (int)topLeft.Y, (int)botRight.X, (int)botRight.Y);
                 Win32.ClipCursor(ref rect);
 
-                int cx = (int)(topLeft.X + ImgScreen.ActualWidth / 2);
-                int cy = (int)(topLeft.Y + ImgScreen.ActualHeight / 2);
-                Win32.SetCursorPos(cx, cy);
+                if (ImgScreen.ActualWidth > 0 && ImgScreen.ActualHeight > 0)
+                {
+                    _centerScreenPoint = ImgScreen.PointToScreen(new Point(ImgScreen.ActualWidth / 2, ImgScreen.ActualHeight / 2));
+                    Win32.SetCursorPos((int)_centerScreenPoint.X, (int)_centerScreenPoint.Y);
+                }
             }
             catch { }
         }
@@ -1075,36 +1112,6 @@ namespace VibeDesk.UI
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == Win32.WM_INPUT && _isGameModeActive)
-            {
-                uint size = 0;
-                Win32.GetRawInputData(lParam, Win32.RID_INPUT, IntPtr.Zero, ref size, (uint)Marshal.SizeOf<Win32.RAWINPUTHEADER>());
-                if (size > 0)
-                {
-                    IntPtr buffer = Marshal.AllocHGlobal((int)size);
-                    try
-                    {
-                        if (Win32.GetRawInputData(lParam, Win32.RID_INPUT, buffer, ref size, (uint)Marshal.SizeOf<Win32.RAWINPUTHEADER>()) == size)
-                        {
-                            var raw = Marshal.PtrToStructure<Win32.RAWINPUT>(buffer);
-                            if (raw.header.dwType == 0) // RIM_TYPEMOUSE
-                            {
-                                int dx = raw.mouse.lLastX;
-                                int dy = raw.mouse.lLastY;
-                                if (dx != 0 || dy != 0)
-                                {
-                                    _client.SendMouseRelative(dx, dy);
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(buffer);
-                    }
-                }
-            }
             return IntPtr.Zero;
         }
 
@@ -1145,50 +1152,63 @@ namespace VibeDesk.UI
                 int msg = wParam.ToInt32();
                 bool isDown = (msg == Win32.WM_KEYDOWN || msg == Win32.WM_SYSKEYDOWN);
 
-                bool isCtrl = (Win32.GetKeyState(0x11) & 0x8000) != 0; // VK_CONTROL
-                bool isAlt = (Win32.GetKeyState(0x12) & 0x8000) != 0;  // VK_MENU
-
-                // Emergency escape / Game Mode Toggle: Ctrl + Alt + G
-                if (isCtrl && isAlt && (kb.vkCode == 0x47)) // 'G' = 0x47
+                // 1. Аварийный выход из игрового режима / переключение:
+                // Клавиша Escape в игровом режиме ВСЕГДА освобождает мышь и отключает игровой режим!
+                if (kb.vkCode == Win32.VK_ESCAPE && isDown && _isGameModeActive)
                 {
-                    if (isDown)
-                    {
-                        Dispatcher.InvokeAsync(ToggleGameMode);
-                    }
-                    return (IntPtr)1; // Suppress local processing
+                    Dispatcher.InvokeAsync(DisableGameMode);
+                    return (IntPtr)1;
                 }
 
-                // Intercept Windows Key (LWIN = 0x5B, RWIN = 0x5C)
+                // Клавиша F10 (одиночное нажатие в любой момент переключает режим игры):
+                if (kb.vkCode == 0x79) // VK_F10
+                {
+                    if (isDown) Dispatcher.InvokeAsync(ToggleGameMode);
+                    return (IntPtr)1;
+                }
+
+                // Комбинация Ctrl + Alt (аппаратная проверка через GetAsyncKeyState):
+                bool isCtrl = (Win32.GetAsyncKeyState(0x11) & 0x8000) != 0;
+                bool isAlt = (Win32.GetAsyncKeyState(0x12) & 0x8000) != 0 || ((kb.flags & 0x20) != 0); // LLKHF_ALTDOWN
+
+                if (isCtrl && isAlt)
+                {
+                    if (isDown && (kb.vkCode == 0x47 || kb.vkCode == Win32.VK_ESCAPE)) // Ctrl+Alt+G или Ctrl+Alt+Esc
+                    {
+                        Dispatcher.InvokeAsync(ToggleGameMode);
+                        return (IntPtr)1;
+                    }
+                }
+
+                // 2. Системные клавиши: Win (LWIN = 0x5B, RWIN = 0x5C)
                 if (kb.vkCode == Win32.VK_LWIN || kb.vkCode == Win32.VK_RWIN)
                 {
                     _client.SendKey((ushort)kb.vkCode, isDown);
-                    return (IntPtr)1; // Suppress local Windows Start Menu!
+                    return (IntPtr)1; // Подавляем локальный "Пуск"
                 }
 
-                // Intercept Alt+Tab
+                // 3. Alt+Tab
                 if (kb.vkCode == Win32.VK_TAB && isAlt)
                 {
                     _client.SendKey((ushort)Win32.VK_TAB, isDown);
-                    return (IntPtr)1; // Suppress local Alt+Tab switcher!
+                    return (IntPtr)1; // Подавляем локальный переключатель окон
                 }
 
-                // Intercept CapsLock (VK_CAPITAL = 0x14)
+                // 4. CapsLock (VK_CAPITAL = 0x14)
                 if (kb.vkCode == Win32.VK_CAPITAL)
                 {
                     _client.SendKey((ushort)Win32.VK_CAPITAL, isDown);
-                    return (IntPtr)1; // Suppress local CapsLock toggle so states stay in sync
+                    return (IntPtr)1;
                 }
 
-                // In Game Mode, forward all keys directly to ensure no lag and full game response
+                // 5. В игровом режиме - все игровые клавиши (WASD, Пробел, Shift и т.д.)
                 if (_isGameModeActive)
                 {
-                    // Allow F11 for fullscreen toggle
                     if (kb.vkCode == 0x7A) // VK_F11
                     {
                         if (isDown) Dispatcher.InvokeAsync(ToggleFullscreen);
                         return (IntPtr)1;
                     }
-                    // Allow F3 for perf timings drawer
                     if (kb.vkCode == 0x72) // VK_F3
                     {
                         if (isDown) Dispatcher.InvokeAsync(() => BtnTogglePerfDrawer_Click(this, new RoutedEventArgs()));
@@ -1196,7 +1216,7 @@ namespace VibeDesk.UI
                     }
 
                     _client.SendKey((ushort)kb.vkCode, isDown);
-                    return (IntPtr)1; // Suppress local WPF / OS handling so game gets pure keys
+                    return (IntPtr)1;
                 }
             }
 

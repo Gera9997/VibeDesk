@@ -150,6 +150,13 @@ namespace VibeDesk.Input
                 flags |= Win32.KEYEVENTF_EXTENDEDKEY;
             }
 
+            // Важно для 3D-игр (DirectInput, RawInput, Genshin Impact, Unity, Unreal):
+            // Игровые движки считывают аппаратные скан-коды клавиш (KEYEVENTF_SCANCODE)
+            if (scanCode > 0)
+            {
+                flags |= Win32.KEYEVENTF_SCANCODE;
+            }
+
             var input = new Win32.INPUT
             {
                 type = Win32.INPUT_KEYBOARD,
@@ -157,7 +164,7 @@ namespace VibeDesk.Input
                 {
                     ki = new Win32.KEYBDINPUT
                     {
-                        wVk = virtualKeyCode,
+                        wVk = (flags & Win32.KEYEVENTF_SCANCODE) != 0 ? (ushort)0 : virtualKeyCode,
                         wScan = (ushort)scanCode,
                         dwFlags = flags
                     }
