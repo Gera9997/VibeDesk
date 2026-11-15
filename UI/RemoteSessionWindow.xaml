@@ -11,14 +11,15 @@
         <Style x:Key="HeaderBtn" TargetType="Button">
             <Setter Property="Background" Value="#2A2A32"/>
             <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="FontSize" Value="10.5"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Margin" Value="4,0"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="Margin" Value="2,0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -39,37 +40,37 @@
         </Grid.RowDefinitions>
 
         <!-- Top Tool Bar -->
-        <Border x:Name="TopToolBar" Grid.Row="0" Background="#18181F" BorderBrush="#282836" BorderThickness="0,0,0,1" Padding="12,6">
+        <Border x:Name="TopToolBar" Grid.Row="0" Background="#18181F" BorderBrush="#282836" BorderThickness="0,0,0,1" Padding="8,4">
             <DockPanel LastChildFill="False">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                    <Border Background="#00C853" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"/>
-                    <TextBlock Text="Подключено" Foreground="#A0A0B0" FontWeight="SemiBold" FontSize="12" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                    <Border Background="#00C853" Width="7" Height="7" CornerRadius="3.5" Margin="0,0,6,0"/>
+                    <TextBlock Text="Подключено" Foreground="#A0A0B0" FontWeight="SemiBold" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center"/>
                     
-                    <TextBlock x:Name="TxtStats" Text="FPS: 0 | Пинг: 0 мс | 0 Кб/с" Foreground="#7A7A90" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtStats" Text="FPS: 0 | Пинг: 0 мс | 0 Кб/с" Foreground="#7A7A90" FontSize="10.5" VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox x:Name="CmbStreamCodec" Width="170" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="11" Margin="0,0,12,0">
-                        <ComboBoxItem Content="⚡ Турбо-MJPEG (Полосы)"/>
-                        <ComboBoxItem Content="🎬 Видеопоток (Full Frame)"/>
+                    <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox x:Name="CmbStreamCodec" Width="120" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="10" Margin="0,0,8,0">
+                        <ComboBoxItem Content="⚡ Турбо-MJPEG"/>
+                        <ComboBoxItem Content="🎬 Видеопоток"/>
                     </ComboBox>
 
-                    <TextBlock Text="Масштаб:" Foreground="#7A7A90" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox x:Name="CmbLiveMode" Width="140" SelectedIndex="0" SelectionChanged="CmbLiveMode_SelectionChanged" FontSize="11" Margin="0,0,12,0">
-                        <ComboBoxItem Content="🎯 100% Чёткость"/>
-                        <ComboBoxItem Content="⚖️ 75% Баланс"/>
-                        <ComboBoxItem Content="🚀 50% Турбо FPS"/>
-                        <ComboBoxItem Content="⚡ 33% Эконом"/>
+                    <TextBlock Text="Масштаб:" Foreground="#7A7A90" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox x:Name="CmbLiveMode" Width="95" SelectedIndex="0" SelectionChanged="CmbLiveMode_SelectionChanged" FontSize="10" Margin="0,0,8,0">
+                        <ComboBoxItem Content="🎯 100%"/>
+                        <ComboBoxItem Content="⚖️ 75%"/>
+                        <ComboBoxItem Content="🚀 50% FPS"/>
+                        <ComboBoxItem Content="⚡ 33% Эко"/>
                     </ComboBox>
 
-                    <Button Style="{StaticResource HeaderBtn}" Content="📊 Тайминги" Click="BtnTogglePerfDrawer_Click" ToolTip="Открыть подробный лог таймингов этапов стрима (F3)"/>
-                    <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер обмена" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
-                    <Button Style="{StaticResource HeaderBtn}" Content="Ctrl+Shift+Esc" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач"/>
-                    <Button Style="{StaticResource HeaderBtn}" Content="Win-Key" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows"/>
-                    <Button x:Name="BtnGameMode" Style="{StaticResource HeaderBtn}" Content="🎮 Захват мыши" Click="BtnGameMode_Click" ToolTip="Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)"/>
-                    <Button Style="{StaticResource HeaderBtn}" Content="⛶ Полный экран" Click="BtnFullscreen_Click"/>
-                    <Button Style="{StaticResource HeaderBtn}" Content="✕ Отключиться" Background="#8A1C1C" Click="BtnDisconnect_Click"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="📊 F3" Click="BtnTogglePerfDrawer_Click" ToolTip="Открыть подробный лог таймингов этапов стрима (F3)"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="Диспетчер" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач (Ctrl+Shift+Esc)"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="Win" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows (Win-Key)"/>
+                    <Button x:Name="BtnGameMode" Style="{StaticResource HeaderBtn}" Content="🎮 Игра" Click="BtnGameMode_Click" ToolTip="Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="⛶ Экран" Click="BtnFullscreen_Click" ToolTip="Полноэкранный режим (F11)"/>
+                    <Button Style="{StaticResource HeaderBtn}" Content="✕ Выход" Background="#8A1C1C" Click="BtnDisconnect_Click" ToolTip="Отключиться от сеанса"/>
                 </StackPanel>
             </DockPanel>
         </Border>

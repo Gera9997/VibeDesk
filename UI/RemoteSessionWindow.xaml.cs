@@ -687,9 +687,8 @@ namespace VibeDesk.UI
         private void UpdateStats()
         {
             if (_client == null || !_client.IsConnected) return;
-            string codecTag = _currentStreamMode == 0 ? "⚡ Турбо-MJPEG" : "🎬 Видеопоток";
-            string fpsLabel = _currentStreamMode == 0 ? $"Полос/c: {_client.CurrentFps}" : $"Кадров/c: {_client.CurrentFps}";
-            TxtStats.Text = $"[{codecTag}] {fpsLabel} | Пинг: {_client.PingMs} мс | {_client.IncomingKbps:F0} Кбит/с";
+            string fpsLabel = _currentStreamMode == 0 ? $"{_client.CurrentFps} полос/с" : $"{_client.CurrentFps} FPS";
+            TxtStats.Text = $"{fpsLabel} | {_client.PingMs} мс | {_client.IncomingKbps:F0} Кб/с";
         }
 
         private void CmbStreamCodec_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -995,8 +994,9 @@ namespace VibeDesk.UI
         private void EnableGameMode()
         {
             _isGameModeActive = true;
-            BtnGameMode.Content = "🎮 Захвачен (Ctrl+Alt+G)";
+            BtnGameMode.Content = "🎮 Активен";
             BtnGameMode.Background = new SolidColorBrush(Color.FromRgb(46, 125, 50));
+            BtnGameMode.ToolTip = "Игровой режим АКТИВЕН (мышь захвачена, Raw Input 1000 Гц). Нажмите или Ctrl+Alt+G для выхода";
             ImgScreen.Cursor = Cursors.None;
             RemoteCursor.Visibility = Visibility.Collapsed;
 
@@ -1007,8 +1007,9 @@ namespace VibeDesk.UI
         private void DisableGameMode()
         {
             _isGameModeActive = false;
-            BtnGameMode.Content = "🎮 Захват мыши";
+            BtnGameMode.Content = "🎮 Игра";
             BtnGameMode.ClearValue(BackgroundProperty);
+            BtnGameMode.ToolTip = "Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)";
 
             Win32.ClipCursor(IntPtr.Zero);
             ImgScreen.Cursor = _isRemoteCursorVisible ? Cursors.Arrow : Cursors.None;
