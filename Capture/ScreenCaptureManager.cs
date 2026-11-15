@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using VibeDesk.Input;
 using VibeDesk.Native;
 
 namespace VibeDesk.Capture
@@ -33,6 +34,8 @@ namespace VibeDesk.Capture
         public int ScreenHeight => _capturer.ScreenHeight;
         public int ScaledWidth => Math.Max(16, ((int)(ScreenWidth * ResolutionScale)) / 2 * 2);
         public int ScaledHeight => Math.Max(StripCount * 8, ((int)(ScreenHeight * ResolutionScale)) / StripCount * StripCount);
+        public int CurrentMonitorIndex { get; private set; } = 0;
+        public int TotalMonitors => MonitorHelper.GetMonitorCount();
 
         public readonly struct FullFrameTelemetry
         {
@@ -56,8 +59,9 @@ namespace VibeDesk.Capture
 
         public FullFrameTelemetry LastFullFrameTelemetry { get; private set; }
 
-        public ScreenCaptureManager(int jpegQuality = 60, float scale = 0.85f)
+        public ScreenCaptureManager(int jpegQuality = 60, float scale = 0.85f, int monitorIndex = 0)
         {
+            CurrentMonitorIndex = monitorIndex;
             ResolutionScale = Math.Clamp(scale, 0.25f, 1.0f);
             _currentQuality = Math.Clamp(jpegQuality, 10, 100);
             _jpegCodec = GetEncoder(ImageFormat.Jpeg);
@@ -69,7 +73,7 @@ namespace VibeDesk.Capture
                 _stripStreams[i] = new MemoryStream(1024 * 128);
             }
 
-            var dxgi = new DxgiScreenCapture();
+            var dxgi = new DxgiScreenCapture(monitorIndex);
             if (dxgi.Initialize())
             {
                 _capturer = dxgi;
@@ -77,9 +81,51 @@ namespace VibeDesk.Capture
             else
             {
                 dxgi.Dispose();
-                var gdi = new GdiScreenCapture();
+                var gdi = new GdiScreenCapture(monitorIndex);
                 gdi.Initialize();
                 _capturer = gdi;
+            }
+
+            InputSimulator.SetMonitorBounds(_capturer.MonitorLeft, _capturer.MonitorTop, _capturer.ScreenWidth, _capturer.ScreenHeight);
+        }
+
+        public bool SwitchMonitor(int monitorIndex)
+        {
+            try
+            {
+                if (monitorIndex == CurrentMonitorIndex && _capturer != null) return true;
+
+                _capturer?.Dispose();
+
+                var dxgi = new DxgiScreenCapture(monitorIndex);
+                if (dxgi.Initialize())
+                {
+                    _capturer = dxgi;
+                }
+                else
+                {
+                    dxgi.Dispose();
+                    var gdi = new GdiScreenCapture(monitorIndex);
+                    gdi.Initialize();
+                    _capturer = gdi;
+                }
+
+                CurrentMonitorIndex = _capturer.MonitorIndex;
+
+                _workBitmap?.Dispose();
+                _workGraphics?.Dispose();
+                _workBitmap = null;
+                _workGraphics = null;
+
+                _tracker.Reset();
+                _forceSweepIndex = 0;
+
+                InputSimulator.SetMonitorBounds(_capturer.MonitorLeft, _capturer.MonitorTop, _capturer.ScreenWidth, _capturer.ScreenHeight);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

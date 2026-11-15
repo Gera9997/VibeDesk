@@ -11,13 +11,24 @@ namespace VibeDesk.Capture
         public bool HasNewFrame => true;
         public int ScreenWidth { get; private set; }
         public int ScreenHeight { get; private set; }
+        public int MonitorLeft { get; private set; }
+        public int MonitorTop { get; private set; }
+        public int MonitorIndex { get; }
 
         private Bitmap? _reusableBitmap;
 
+        public GdiScreenCapture(int monitorIndex = 0)
+        {
+            MonitorIndex = monitorIndex;
+        }
+
         public bool Initialize()
         {
-            ScreenWidth = Win32.GetSystemMetrics(Win32.SM_CXSCREEN);
-            ScreenHeight = Win32.GetSystemMetrics(Win32.SM_CYSCREEN);
+            var mon = MonitorHelper.GetMonitor(MonitorIndex);
+            ScreenWidth = mon.Width;
+            ScreenHeight = mon.Height;
+            MonitorLeft = mon.Left;
+            MonitorTop = mon.Top;
 
             if (ScreenWidth <= 0 || ScreenHeight <= 0)
             {
@@ -41,7 +52,7 @@ namespace VibeDesk.Capture
             {
                 using (var g = Graphics.FromImage(_reusableBitmap!))
                 {
-                    g.CopyFromScreen(0, 0, 0, 0, new Size(ScreenWidth, ScreenHeight), CopyPixelOperation.SourceCopy);
+                    g.CopyFromScreen(MonitorLeft, MonitorTop, 0, 0, new Size(ScreenWidth, ScreenHeight), CopyPixelOperation.SourceCopy);
                 }
                 return _reusableBitmap;
             }
@@ -55,7 +66,7 @@ namespace VibeDesk.Capture
                     IntPtr hBmp = Win32.CreateCompatibleBitmap(hdcSrc, ScreenWidth, ScreenHeight);
                     IntPtr hOld = Win32.SelectObject(hdcDest, hBmp);
 
-                    Win32.BitBlt(hdcDest, 0, 0, ScreenWidth, ScreenHeight, hdcSrc, 0, 0, Win32.SRCCOPY);
+                    Win32.BitBlt(hdcDest, 0, 0, ScreenWidth, ScreenHeight, hdcSrc, MonitorLeft, MonitorTop, Win32.SRCCOPY);
 
                     using (var captured = Image.FromHbitmap(hBmp))
                     using (var g = Graphics.FromImage(_reusableBitmap!))

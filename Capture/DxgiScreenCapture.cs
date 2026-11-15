@@ -14,12 +14,20 @@ namespace VibeDesk.Capture
         public bool HasNewFrame { get; private set; } = true;
         public int ScreenWidth { get; private set; }
         public int ScreenHeight { get; private set; }
+        public int MonitorLeft { get; private set; }
+        public int MonitorTop { get; private set; }
+        public int MonitorIndex { get; }
 
         private ID3D11Device? _device;
         private ID3D11DeviceContext? _context;
         private IDXGIOutputDuplication? _deskDupl;
         private ID3D11Texture2D? _stagingTexture;
         private Bitmap? _reusableBitmap;
+
+        public DxgiScreenCapture(int monitorIndex = 0)
+        {
+            MonitorIndex = monitorIndex;
+        }
 
         public bool Initialize()
         {
@@ -54,19 +62,29 @@ namespace VibeDesk.Capture
                 using var adapter = dxgiDevice.GetAdapter();
                 if (adapter == null) return false;
 
-                if (adapter.EnumOutputs(0, out var output).Failure || output == null)
+                IDXGIOutput? output = null;
+                if (adapter.EnumOutputs((uint)MonitorIndex, out output).Failure || output == null)
                 {
-                    return false;
+                    if (MonitorIndex != 0 && adapter.EnumOutputs(0u, out output).Success && output != null)
+                    {
+                        // Fallback to primary output 0
+                    }
+                    else
+                    {
+                        return false;
+                    }
                 }
 
                 using (output)
                 {
-                    using var output1 = output.QueryInterface<IDXGIOutput1>();
+                    using var output1 = output!.QueryInterface<IDXGIOutput1>();
                     if (output1 == null) return false;
 
                     var desc = output.Description;
                     ScreenWidth = desc.DesktopCoordinates.Right - desc.DesktopCoordinates.Left;
                     ScreenHeight = desc.DesktopCoordinates.Bottom - desc.DesktopCoordinates.Top;
+                    MonitorLeft = desc.DesktopCoordinates.Left;
+                    MonitorTop = desc.DesktopCoordinates.Top;
 
                     _deskDupl = output1.DuplicateOutput(_device);
                     if (_deskDupl == null) return false;

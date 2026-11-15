@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using VibeDesk.Audio;
 using VibeDesk.Capture;
 using VibeDesk.Input;
 using VibeDesk.Native;
@@ -23,6 +24,9 @@ namespace VibeDesk.Network
         private readonly NetManager _netServer;
         private readonly HostRetransmitAndSender _retransmitSender = new();
         private ScreenCaptureManager? _captureManager;
+        private AudioCaptureManager? _audioCapture;
+        private volatile bool _isAudioStreamingEnabled = true;
+        private uint _audioSequence = 0;
         private NetPeer? _connectedPeer;
 
         private Thread? _streamingThread;
@@ -185,8 +189,10 @@ namespace VibeDesk.Network
                 OnStatusChanged?.Invoke($"⚡ Клиент подключен: {peer.Address}:{peer.Port}");
                 OnClientConnected?.Invoke(peer);
 
-                // Send screen geometry
-                peer.Send(PacketBuilder.CreateScreenInfo(ScreenWidth, ScreenHeight), DeliveryMethod.ReliableOrdered);
+                // Send screen geometry and multi-monitor info
+                int totalMons = _captureManager?.TotalMonitors ?? 1;
+                int curMon = _captureManager?.CurrentMonitorIndex ?? 0;
+                peer.Send(PacketBuilder.CreateScreenInfo(ScreenWidth, ScreenHeight, (byte)totalMons, (byte)curMon), DeliveryMethod.ReliableOrdered);
             };
 
             _listener.PeerDisconnectedEvent += (peer, info) =>
@@ -261,6 +267,26 @@ namespace VibeDesk.Network
             };
             _streamingThread.Start();
 
+            try
+            {
+                _audioCapture = new AudioCaptureManager();
+                _audioCapture.OnAudioChunkReady += (opusData, length) =>
+                {
+                    var peer = _connectedPeer;
+                    if (peer != null && peer.ConnectionState == ConnectionState.Connected && _isAudioStreamingEnabled)
+                    {
+                        uint seq = unchecked(++_audioSequence);
+                        byte[] packet = PacketBuilder.CreateAudioChunk(seq, opusData, 0, length);
+                        peer.Send(packet, DeliveryMethod.Sequenced);
+                    }
+                };
+                _audioCapture.Start();
+            }
+            catch (Exception ex)
+            {
+                OnStatusChanged?.Invoke($"[Звук] Предупреждение: не удалось инициализировать захват звука: {ex.Message}");
+            }
+
             OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок: {_captureManager.ActiveEngineName}, FPS: {_targetFps}, Кэп: {_maxBitrateKbps} Кбит/с");
             return true;
         }
@@ -269,6 +295,9 @@ namespace VibeDesk.Network
         {
             _isRunning = false;
             _streamingThread?.Join(500);
+            _audioCapture?.Stop();
+            _audioCapture?.Dispose();
+            _audioCapture = null;
             _netServer.Stop();
             _captureManager?.Dispose();
             _captureManager = null;
@@ -574,6 +603,33 @@ namespace VibeDesk.Network
                             }
                             _retransmitSender.HandleNackRequest(peer, nackFrameId, missingIndices);
                         }
+                    }
+                    break;
+
+                case PacketType.SwitchMonitor:
+                    if (reader.AvailableBytes >= 1 && _captureManager != null)
+                    {
+                        byte targetIdx = reader.GetByte();
+                        if (_captureManager.SwitchMonitor(targetIdx))
+                        {
+                            OnStatusChanged?.Invoke($"[Монитор] Переключен на монитор #{targetIdx + 1} ({_captureManager.ScreenWidth}x{_captureManager.ScreenHeight})");
+                            peer.Send(PacketBuilder.CreateScreenInfo(
+                                _captureManager.ScreenWidth,
+                                _captureManager.ScreenHeight,
+                                (byte)_captureManager.TotalMonitors,
+                                (byte)_captureManager.CurrentMonitorIndex),
+                                DeliveryMethod.ReliableOrdered);
+                        }
+                    }
+                    break;
+
+                case PacketType.AudioControl:
+                    if (reader.AvailableBytes >= 1)
+                    {
+                        bool enableAudio = reader.GetByte() == 1;
+                        _isAudioStreamingEnabled = enableAudio;
+                        _audioCapture?.SetStreamingEnabled(enableAudio);
+                        OnStatusChanged?.Invoke($"[Звук] {(enableAudio ? "Включен клиентом" : "Выключен клиентом (передача остановлена)")}");
                     }
                     break;
             }

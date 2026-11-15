@@ -26,6 +26,19 @@ namespace VibeDesk.Input
 
     public static class InputSimulator
     {
+        private static int _activeMonitorLeft = 0;
+        private static int _activeMonitorTop = 0;
+        private static int _activeMonitorWidth = 0;
+        private static int _activeMonitorHeight = 0;
+
+        public static void SetMonitorBounds(int left, int top, int width, int height)
+        {
+            _activeMonitorLeft = left;
+            _activeMonitorTop = top;
+            _activeMonitorWidth = width;
+            _activeMonitorHeight = height;
+        }
+
         public static void SendMouseRelative(int deltaX, int deltaY)
         {
             var input = new Win32.INPUT
@@ -46,12 +59,25 @@ namespace VibeDesk.Input
         }
         public static void SendMouseMove(double normX, double normY)
         {
-            // Normalize to 0 .. 65535 coordinate space
             normX = Math.Clamp(normX, 0.0, 1.0);
             normY = Math.Clamp(normY, 0.0, 1.0);
 
-            int absX = (int)Math.Round(normX * 65535.0);
-            int absY = (int)Math.Round(normY * 65535.0);
+            int vLeft = Win32.GetSystemMetrics(Win32.SM_XVIRTUALSCREEN);
+            int vTop = Win32.GetSystemMetrics(Win32.SM_YVIRTUALSCREEN);
+            int vWidth = Win32.GetSystemMetrics(Win32.SM_CXVIRTUALSCREEN);
+            int vHeight = Win32.GetSystemMetrics(Win32.SM_CYVIRTUALSCREEN);
+
+            if (vWidth <= 0) vWidth = Win32.GetSystemMetrics(Win32.SM_CXSCREEN);
+            if (vHeight <= 0) vHeight = Win32.GetSystemMetrics(Win32.SM_CYSCREEN);
+
+            int monWidth = _activeMonitorWidth > 0 ? _activeMonitorWidth : Win32.GetSystemMetrics(Win32.SM_CXSCREEN);
+            int monHeight = _activeMonitorHeight > 0 ? _activeMonitorHeight : Win32.GetSystemMetrics(Win32.SM_CYSCREEN);
+
+            int pixelX = _activeMonitorLeft + (int)Math.Round(normX * monWidth);
+            int pixelY = _activeMonitorTop + (int)Math.Round(normY * monHeight);
+
+            int absX = (int)Math.Round((double)(pixelX - vLeft) * 65535.0 / vWidth);
+            int absY = (int)Math.Round((double)(pixelY - vTop) * 65535.0 / vHeight);
 
             var input = new Win32.INPUT
             {

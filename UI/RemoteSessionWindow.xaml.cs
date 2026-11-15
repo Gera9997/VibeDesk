@@ -103,6 +103,7 @@ namespace VibeDesk.UI
 
             _client.OnStripeReady += stripe => _stripeRenderer.EnqueueAssembledStripe(stripe);
             _client.OnFrameReceived += OnFrameReceived;
+            _client.OnScreenInfoReceived += OnScreenInfoReceived;
             _client.OnDisconnected += OnDisconnected;
             _client.OnClipboardReceived += OnClipboardReceived;
             _client.OnCursorPositionReceived += OnCursorPositionReceived;
@@ -181,6 +182,7 @@ namespace VibeDesk.UI
                 _frameSignal.Set();
                 _statsTimer.Stop();
                 _client.OnFrameReceived -= OnFrameReceived;
+                _client.OnScreenInfoReceived -= OnScreenInfoReceived;
                 _client.OnDisconnected -= OnDisconnected;
                 _client.OnClipboardReceived -= OnClipboardReceived;
                 _client.OnCursorPositionReceived -= OnCursorPositionReceived;
@@ -188,6 +190,50 @@ namespace VibeDesk.UI
                 _renderThread?.Join(200);
                 _stripeRenderer.Dispose();
             };
+        }
+
+        private void OnScreenInfoReceived(int width, int height, byte monitorCount, byte activeIndex)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (monitorCount >= 2)
+                {
+                    PanelMonitors.Visibility = Visibility.Visible;
+                    PanelMonitors.Children.Clear();
+
+                    for (byte i = 0; i < monitorCount; i++)
+                    {
+                        byte monIndex = i;
+                        bool isActive = (i == activeIndex);
+                        var btn = new Button
+                        {
+                            Content = $"🖥️ {i + 1}",
+                            ToolTip = $"Переключить на монитор {i + 1}",
+                            Margin = new Thickness(0, 0, 3, 0),
+                            Padding = new Thickness(5, 1, 5, 1),
+                            FontSize = 9.5,
+                            FontWeight = isActive ? FontWeights.Bold : FontWeights.Normal,
+                            Background = isActive ? (Brush)new BrushConverter().ConvertFromString("#2E7D32")! : (Brush)new BrushConverter().ConvertFromString("#282836")!,
+                            Foreground = Brushes.White,
+                            BorderThickness = new Thickness(1),
+                            BorderBrush = isActive ? (Brush)new BrushConverter().ConvertFromString("#4CAF50")! : (Brush)new BrushConverter().ConvertFromString("#3D3D48")!,
+                            Cursor = Cursors.Hand
+                        };
+
+                        btn.Click += (s, e) =>
+                        {
+                            _client.SendSwitchMonitor(monIndex);
+                        };
+
+                        PanelMonitors.Children.Add(btn);
+                    }
+                }
+                else
+                {
+                    PanelMonitors.Visibility = Visibility.Collapsed;
+                    PanelMonitors.Children.Clear();
+                }
+            });
         }
 
         private void OnFrameReceived(byte[] payload)
@@ -980,6 +1026,27 @@ namespace VibeDesk.UI
             _client.SendKey(0x5B, false);
         }
 
+        private bool _isAudioActive = true;
+
+        private void BtnAudio_Click(object sender, RoutedEventArgs e)
+        {
+            _isAudioActive = !_isAudioActive;
+            if (_isAudioActive)
+            {
+                BtnAudio.Content = "🔊 Звук";
+                BtnAudio.ToolTip = "Звук включен (нажмите, чтобы выключить)";
+                BtnAudio.ClearValue(BackgroundProperty);
+                _client.SendAudioControl(true);
+            }
+            else
+            {
+                BtnAudio.Content = "🔇 Звук";
+                BtnAudio.ToolTip = "Звук выключен (передача аудиопакетов остановлена)";
+                BtnAudio.Background = (Brush)new BrushConverter().ConvertFromString("#8A1C1C")!;
+                _client.SendAudioControl(false);
+            }
+        }
+
         private void BtnDisconnect_Click(object sender, RoutedEventArgs e) => Close();
 
         private void ApplyThemeFromConfig()
@@ -1017,7 +1084,7 @@ namespace VibeDesk.UI
             _isResettingPos = false;
             BtnGameMode.Content = "🎮 Активен";
             BtnGameMode.Background = new SolidColorBrush(Color.FromRgb(46, 125, 50));
-            BtnGameMode.ToolTip = "Игровой режим АКТИВЕН. Нажмите ESC или F10 для выхода";
+            BtnGameMode.ToolTip = "Игровой режим АКТИВЕН. Нажмите Shift+ESC или F10 для выхода";
             ImgScreen.Cursor = Cursors.None;
             RemoteCursor.Visibility = Visibility.Collapsed;
 
@@ -1041,7 +1108,7 @@ namespace VibeDesk.UI
             _isResettingPos = false;
             BtnGameMode.Content = "🎮 Игра";
             BtnGameMode.ClearValue(BackgroundProperty);
-            BtnGameMode.ToolTip = "Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (F10 / ESC)";
+            BtnGameMode.ToolTip = "Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Shift+ESC / F10)";
 
             if (OverlayGameModeHint != null)
             {
@@ -1153,8 +1220,10 @@ namespace VibeDesk.UI
                 bool isDown = (msg == Win32.WM_KEYDOWN || msg == Win32.WM_SYSKEYDOWN);
 
                 // 1. Аварийный выход из игрового режима / переключение:
-                // Клавиша Escape в игровом режиме ВСЕГДА освобождает мышь и отключает игровой режим!
-                if (kb.vkCode == Win32.VK_ESCAPE && isDown && _isGameModeActive)
+                // Shift + Escape (одиночный Escape отправляется в игру для игровых меню!)
+                bool isShift = (Win32.GetAsyncKeyState(0x10) & 0x8000) != 0; // VK_SHIFT
+
+                if (kb.vkCode == Win32.VK_ESCAPE && isShift && isDown && _isGameModeActive)
                 {
                     Dispatcher.InvokeAsync(DisableGameMode);
                     return (IntPtr)1;

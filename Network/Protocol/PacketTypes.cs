@@ -22,7 +22,10 @@ namespace VibeDesk.Network.Protocol
         StreamMode = 13,
         VideoXorParity = 14, // Избыточный XOR-чанк для мгновенного восстановления 1 потери за 0 мс
         VideoNack = 15,      // Запрос повторной отправки конкретных чанков
-        VideoChunk = 16      // Новый 14-байтовый чанк полосы со StripeIndex и StripeY
+        VideoChunk = 16,     // Новый 14-байтовый чанк полосы со StripeIndex и StripeY
+        SwitchMonitor = 17,  // Запрос переключения активного монитора (1 байт monitorIndex)
+        AudioChunk = 18,     // Opus аудио-пакет (4 байта sequence + Opus payload)
+        AudioControl = 19    // Управление аудио: [0]=Type, [1]=1 (включить) или 0 (выключить)
     }
 
     public static class ProtocolConstants
@@ -180,13 +183,34 @@ namespace VibeDesk.Network.Protocol
             return packet;
         }
 
-        public static byte[] CreateScreenInfo(int width, int height)
+        public static byte[] CreateScreenInfo(int width, int height, byte monitorCount = 1, byte activeMonitorIndex = 0)
         {
-            byte[] packet = new byte[9];
+            byte[] packet = new byte[11];
             packet[0] = (byte)PacketType.ScreenInfo;
             BitConverter.TryWriteBytes(packet.AsSpan(1, 4), width);
             BitConverter.TryWriteBytes(packet.AsSpan(5, 4), height);
+            packet[9] = monitorCount;
+            packet[10] = activeMonitorIndex;
             return packet;
+        }
+
+        public static byte[] CreateSwitchMonitor(byte monitorIndex)
+        {
+            return new byte[] { (byte)PacketType.SwitchMonitor, monitorIndex };
+        }
+
+        public static byte[] CreateAudioChunk(uint sequence, byte[] opusData, int offset, int length)
+        {
+            byte[] packet = new byte[5 + length];
+            packet[0] = (byte)PacketType.AudioChunk;
+            BitConverter.TryWriteBytes(packet.AsSpan(1, 4), sequence);
+            Buffer.BlockCopy(opusData, offset, packet, 5, length);
+            return packet;
+        }
+
+        public static byte[] CreateAudioControl(bool enableAudio)
+        {
+            return new byte[] { (byte)PacketType.AudioControl, enableAudio ? (byte)1 : (byte)0 };
         }
 
         public static byte[] CreateStreamSettings(float scale, int fps, int quality)

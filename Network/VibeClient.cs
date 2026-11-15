@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using VibeDesk.Audio;
 using VibeDesk.Input;
 using VibeDesk.Network.Protocol;
 
@@ -17,6 +18,8 @@ namespace VibeDesk.Network
         private readonly NetManager _netClient;
         private readonly FrameReassembler _reassembler;
         private NetPeer? _serverPeer;
+        private AudioPlaybackManager? _audioPlayback;
+        private volatile bool _isAudioEnabled = true;
 
         private Thread? _pollThread;
         private volatile bool _isRunning = false;
@@ -32,7 +35,7 @@ namespace VibeDesk.Network
         public event Action? OnDisconnected;
         public event Action<byte[]>? OnFrameReceived;
         public event Action<AssembledStripe>? OnStripeReady;
-        public event Action<int, int>? OnScreenInfoReceived;
+        public event Action<int, int, byte, byte>? OnScreenInfoReceived;
         public event Action<string>? OnClipboardReceived;
         public event Action<IPEndPoint>? OnPunchReceived;
         public event Action<IPEndPoint>? OnPunchAckReceived;
@@ -45,6 +48,8 @@ namespace VibeDesk.Network
         public double IncomingKbps { get; private set; }
         public int RemoteWidth { get; private set; } = 1920;
         public int RemoteHeight { get; private set; } = 1080;
+        public int RemoteMonitorCount { get; private set; } = 1;
+        public int RemoteActiveMonitorIndex { get; private set; } = 0;
 
         public NetManager RawNetManager => _netClient;
         public int LocalPort => _netClient.LocalPort;
@@ -148,12 +153,25 @@ namespace VibeDesk.Network
             {
                 _serverPeer = peer;
                 OnStatusChanged?.Invoke($"Подключено к хосту: {peer.Address}");
+                try
+                {
+                    _audioPlayback = new AudioPlaybackManager();
+                    _audioPlayback.Start();
+                }
+                catch { }
                 OnConnected?.Invoke();
             };
 
             _listener.PeerDisconnectedEvent += (peer, info) =>
             {
                 _serverPeer = null;
+                try
+                {
+                    _audioPlayback?.Stop();
+                    _audioPlayback?.Dispose();
+                    _audioPlayback = null;
+                }
+                catch { }
                 if (_suppressDisconnectEvent || info.Reason == DisconnectReason.DisconnectPeerCalled)
                 {
                     return;
@@ -285,6 +303,13 @@ namespace VibeDesk.Network
             _isRunning = false;
             _serverPeer?.Disconnect();
             _pollThread?.Join(300);
+            try
+            {
+                _audioPlayback?.Stop();
+                _audioPlayback?.Dispose();
+                _audioPlayback = null;
+            }
+            catch { }
             _netClient.Stop();
             _serverPeer = null;
             OnStatusChanged?.Invoke("Клиент отключен.");
@@ -355,7 +380,16 @@ namespace VibeDesk.Network
                     {
                         RemoteWidth = reader.GetInt();
                         RemoteHeight = reader.GetInt();
-                        OnScreenInfoReceived?.Invoke(RemoteWidth, RemoteHeight);
+                        byte monCount = 1;
+                        byte activeMon = 0;
+                        if (reader.AvailableBytes >= 2)
+                        {
+                            monCount = reader.GetByte();
+                            activeMon = reader.GetByte();
+                        }
+                        RemoteMonitorCount = monCount;
+                        RemoteActiveMonitorIndex = activeMon;
+                        OnScreenInfoReceived?.Invoke(RemoteWidth, RemoteHeight, monCount, activeMon);
                     }
                     break;
 
@@ -382,6 +416,16 @@ namespace VibeDesk.Network
                         short screenW = reader.GetShort();
                         short screenH = reader.GetShort();
                         OnCursorPositionReceived?.Invoke(visible, curX, curY, screenW, screenH);
+                    }
+                    break;
+
+                case PacketType.AudioChunk:
+                    if (reader.AvailableBytes >= 5 && _isAudioEnabled)
+                    {
+                        uint seq = reader.GetUInt();
+                        int opusLen = reader.AvailableBytes;
+                        byte[] opusData = reader.GetRemainingBytes();
+                        _audioPlayback?.ProcessAudioChunk(opusData, 0, opusLen);
                     }
                     break;
             }
@@ -454,6 +498,26 @@ namespace VibeDesk.Network
             if (IsConnected)
             {
                 byte[] packet = PacketBuilder.CreateStreamSettings(scale, fps, quality, maxBitrateKbps);
+                _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
+        public void SendSwitchMonitor(byte monitorIndex)
+        {
+            if (IsConnected)
+            {
+                byte[] packet = PacketBuilder.CreateSwitchMonitor(monitorIndex);
+                _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
+        public void SendAudioControl(bool enableAudio)
+        {
+            _isAudioEnabled = enableAudio;
+            _audioPlayback?.SetMuted(!enableAudio);
+            if (IsConnected)
+            {
+                byte[] packet = PacketBuilder.CreateAudioControl(enableAudio);
                 _serverPeer!.Send(packet, DeliveryMethod.ReliableOrdered);
             }
         }

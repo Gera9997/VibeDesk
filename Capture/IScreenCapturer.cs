@@ -11,5 +11,8 @@ namespace VibeDesk.Capture
         bool HasNewFrame { get; }
         int ScreenWidth { get; }
         int ScreenHeight { get; }
+        int MonitorLeft { get; }
+        int MonitorTop { get; }
+        int MonitorIndex { get; }
     }
 }

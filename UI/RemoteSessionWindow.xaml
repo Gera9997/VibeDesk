@@ -50,6 +50,7 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <StackPanel x:Name="PanelMonitors" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0" Visibility="Collapsed"/>
                     <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <ComboBox x:Name="CmbStreamCodec" Width="120" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="10" Margin="0,0,8,0">
                         <ComboBoxItem Content="⚡ Турбо-MJPEG"/>
@@ -68,7 +69,8 @@
                     <Button Style="{StaticResource HeaderBtn}" Content="📋 Буфер" Click="BtnSyncClipboard_Click" ToolTip="Отправить буфер обмена на удаленный ПК"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Диспетчер" Click="BtnTaskMgr_Click" ToolTip="Открыть диспетчер задач (Ctrl+Shift+Esc)"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="Win" Click="BtnWinKey_Click" ToolTip="Нажать клавишу Windows (Win-Key)"/>
-                    <Button x:Name="BtnGameMode" Style="{StaticResource HeaderBtn}" Content="🎮 Игра" Click="BtnGameMode_Click" ToolTip="Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Ctrl+Alt+G)"/>
+                    <Button x:Name="BtnAudio" Style="{StaticResource HeaderBtn}" Content="🔊 Звук" Click="BtnAudio_Click" ToolTip="Включить/выключить звук с удаленного ПК (при выключении пакеты не отправляются)"/>
+                    <Button x:Name="BtnGameMode" Style="{StaticResource HeaderBtn}" Content="🎮 Игра" Click="BtnGameMode_Click" ToolTip="Игровой режим: относительное движение мыши для 3D-игр и перехват системных клавиш (Shift+Esc / F10)"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="⛶ Экран" Click="BtnFullscreen_Click" ToolTip="Полноэкранный режим (F11)"/>
                     <Button Style="{StaticResource HeaderBtn}" Content="✕ Выход" Background="#8A1C1C" Click="BtnDisconnect_Click" ToolTip="Отключиться от сеанса"/>
                 </StackPanel>
@@ -98,15 +100,16 @@
                       Visibility="Collapsed"/>
             </Canvas>
 
-            <!-- Game Mode Floating Hint -->
+            <!-- Game Mode Corner Transparent Hint -->
             <Border x:Name="OverlayGameModeHint"
-                    HorizontalAlignment="Center" VerticalAlignment="Top"
-                    Margin="0,12,0,0"
-                    Background="#E6101014" BorderBrush="#00C853" BorderThickness="1"
-                    CornerRadius="6" Padding="14,6"
+                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                    Margin="12,0,0,12"
+                    Background="#7508080A" BorderBrush="#5500C853" BorderThickness="1"
+                    CornerRadius="5" Padding="8,4"
+                    Opacity="0.75"
                     Visibility="Collapsed" IsHitTestVisible="False">
-                <TextBlock Text="🎮 Игровой режим активен (3D-мышь) — Нажмите ESC или F10 для выхода"
-                           Foreground="#E0E0E0" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Text="🎮 Игровой режим (Shift+Esc / F10)"
+                           Foreground="#E0E0E0" FontSize="10" FontWeight="SemiBold"/>
             </Border>
 
             <!-- Loading overlay -->
