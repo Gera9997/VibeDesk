@@ -108,6 +108,7 @@ namespace VibeDesk
                     {
                         var bmp = new BitmapImage();
                         bmp.BeginInit();
+                        bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
                         bmp.CacheOption = BitmapCacheOption.OnLoad;
                         bmp.UriSource = new Uri(thumbFile, UriKind.Absolute);
                         bmp.EndInit();
@@ -874,6 +875,7 @@ namespace VibeDesk
                     {
                         try
                         {
+                            AddRecentConnection(target);
                             var sessionWindow = new RemoteSessionWindow(directClient, connectIp) { Owner = this };
                             sessionWindow.Closed += (s, ev) => Dispatcher.InvokeAsync(LoadRecentConnections);
                             sessionWindow.Show();
@@ -1018,38 +1020,69 @@ namespace VibeDesk
 
             if (isNoir)
             {
-                // Черный #080808 + Серебристый #BFC3C7
+                // Черно-серебристая палитра (Noir Neumorphic / Soft 3D)
                 SetThemeBrush("WindowBg", ColorFromHex("#080808"));
-                SetThemeBrush("WindowTint", ColorFromHex("#E6080808"));
+                SetThemeBrush("WindowTint", ColorFromHex("#60080808"));
                 SetThemeBrush("HeaderBg", ColorFromHex("#F0080808"));
-                SetThemeBrush("HeaderBorder", ColorFromHex("#26262B"));
+                SetThemeBrush("HeaderBorder", ColorFromHex("#222228"));
                 SetThemeBrush("FooterBg", ColorFromHex("#F0080808"));
-                SetThemeBrush("FooterBorder", ColorFromHex("#26262B"));
-                SetThemeBrush("GlassPanelBg", ColorFromHex("#E60C0C0E"));
-                SetThemeBrush("GlassPanelBorder", ColorFromHex("#26262C"));
+                SetThemeBrush("FooterBorder", ColorFromHex("#222228"));
+
+                // Выпуклые карточки (GlassPanel) с объёмным вертикальным градиентом и световым скосом
+                SetThemeBrush("GlassPanelBg", CreateVGradient(ColorFromHex("#1C1C24"), ColorFromHex("#111116")));
+                SetThemeBrush("GlassPanelBorder", CreateVGradient(ColorFromHex("#383846"), ColorFromHex("#16161D")));
+
                 SetThemeBrush("AccentColor", ColorFromHex("#BFC3C7")); // Серебристый
-                SetThemeBrush("PrimaryBtnBg", ColorFromHex("#BFC3C7")); // Серебристый акцент
-                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#080808")); // Черный жирный текст
-                SetThemeBrush("SecondaryBtnBg", ColorFromHex("#141416"));
-                SetThemeBrush("SecondaryBtnBorder", ColorFromHex("#2E2E34"));
-                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#BFC3C7"));
-                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#0E0E10"));
-                SetThemeBrush("ModernTextBoxBorder", ColorFromHex("#28282D"));
+
+                // Главная кнопка "Подключиться" (Convex metallic silver)
+                SetThemeBrush("PrimaryBtnBg", CreateVGradient3(ColorFromHex("#E8EBEF"), ColorFromHex("#C4C8CD"), ColorFromHex("#9FA4AA")));
+                SetThemeBrush("PrimaryBtnBorder", CreateVGradient(ColorFromHex("#FFFFFF"), ColorFromHex("#70757C")));
+                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#0A0A0E"));
+                SetThemeBrush("PrimaryBtnHoverBg", CreateVGradient3(ColorFromHex("#F2F5F8"), ColorFromHex("#D2D6DC"), ColorFromHex("#ACB1B8")));
+                SetThemeBrush("PrimaryBtnHoverBorder", CreateVGradient(ColorFromHex("#FFFFFF"), ColorFromHex("#8A9098")));
+                SetThemeBrush("PrimaryBtnPressedBg", CreateVGradient(ColorFromHex("#888D94"), ColorFromHex("#B6BAC0")));
+                SetThemeBrush("PrimaryBtnPressedBorder", CreateVGradient(ColorFromHex("#50545A"), ColorFromHex("#D0D4D8")));
+
+                // Вторичные кнопки (Выпуклые тактильные плашки)
+                SetThemeBrush("SecondaryBtnBg", CreateVGradient3(ColorFromHex("#2C2C37"), ColorFromHex("#1E1E26"), ColorFromHex("#14141A")));
+                SetThemeBrush("SecondaryBtnBorder", CreateVGradient(ColorFromHex("#545468"), ColorFromHex("#1A1A22")));
+                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#D8DCE0"));
+                SetThemeBrush("SecondaryBtnHoverBg", CreateVGradient3(ColorFromHex("#3A3A49"), ColorFromHex("#282833"), ColorFromHex("#1C1C24")));
+                SetThemeBrush("SecondaryBtnHoverBorder", CreateVGradient(ColorFromHex("#787896"), ColorFromHex("#2E2E3C")));
+                SetThemeBrush("SecondaryBtnPressedBg", CreateVGradient(ColorFromHex("#101015"), ColorFromHex("#181820")));
+                SetThemeBrush("SecondaryBtnPressedBorder", CreateVGradient(ColorFromHex("#0C0C10"), ColorFromHex("#383846")));
+
+                // Впуклый / утопленный инпут (ModernTextBox)
+                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#09090C"));
+                SetThemeBrush("ModernTextBoxBorder", CreateVGradient(ColorFromHex("#0A0A0E"), ColorFromHex("#323240")));
                 SetThemeBrush("ModernTextBoxFg", ColorFromHex("#F5F5F7"));
-                SetThemeBrush("LogBoxBg", ColorFromHex("#080808"));
-                SetThemeBrush("LogBoxBorder", ColorFromHex("#202024"));
+
+                // Впуклый лог
+                SetThemeBrush("LogBoxBg", ColorFromHex("#07070A"));
+                SetThemeBrush("LogBoxBorder", CreateVGradient(ColorFromHex("#0A0A0E"), ColorFromHex("#262632")));
                 SetThemeBrush("LogBoxFg", ColorFromHex("#A6ABB0"));
+
                 SetThemeBrush("TextPrimary", ColorFromHex("#F5F5F7"));
                 SetThemeBrush("TextSecondary", ColorFromHex("#8E9398"));
                 SetThemeBrush("TextMuted", ColorFromHex("#5E6266"));
-                SetThemeBrush("RecentItemBg", ColorFromHex("#121214"));
-                SetThemeBrush("RecentItemBorder", ColorFromHex("#202024"));
+
+                // Карточка недавних подключений
+                SetThemeBrush("RecentItemBg", CreateVGradient(ColorFromHex("#1C1C23"), ColorFromHex("#131318")));
+                SetThemeBrush("RecentItemBorder", CreateVGradient(ColorFromHex("#363644"), ColorFromHex("#181820")));
+                SetThemeBrush("RecentItemHoverBg", CreateVGradient(ColorFromHex("#262632"), ColorFromHex("#181820")));
+                SetThemeBrush("RecentItemHoverBorder", CreateVGradient(ColorFromHex("#657080"), ColorFromHex("#303844")));
+
                 SetThemeBrush("ThumbnailBg", ColorFromHex("#080808"));
-                SetThemeBrush("ThumbnailBorder", ColorFromHex("#35BFC3C7"));
-                SetThemeBrush("ArrowBtnBg", ColorFromHex("#20BFC3C7"));
-                SetThemeBrush("ArrowBtnBorder", ColorFromHex("#40BFC3C7"));
-                SetThemeBrush("BadgeBg", ColorFromHex("#141416"));
-                SetThemeBrush("BadgeBorder", ColorFromHex("#2E2E34"));
+                SetThemeBrush("ThumbnailBorder", ColorFromHex("#28BFC3C7"));
+
+                // Круглая выпуклая кнопка стрелки
+                SetThemeBrush("ArrowBtnBg", CreateVGradient(ColorFromHex("#32323E"), ColorFromHex("#1E1E26")));
+                SetThemeBrush("ArrowBtnBorder", CreateVGradient(ColorFromHex("#5C5C70"), ColorFromHex("#22222C")));
+                SetThemeBrush("ArrowBtnHoverBg", CreateVGradient(ColorFromHex("#404050"), ColorFromHex("#282834")));
+                SetThemeBrush("ArrowBtnHoverBorder", CreateVGradient(ColorFromHex("#787892"), ColorFromHex("#30303E")));
+
+                SetThemeBrush("BadgeBg", CreateVGradient(ColorFromHex("#22222C"), ColorFromHex("#141418")));
+                SetThemeBrush("BadgeBorder", CreateVGradient(ColorFromHex("#3E3E4E"), ColorFromHex("#1A1A22")));
             }
             else
             {
@@ -1060,32 +1093,88 @@ namespace VibeDesk
                 SetThemeBrush("HeaderBorder", ColorFromHex("#305C423E"));
                 SetThemeBrush("FooterBg", ColorFromHex("#C0181312"));
                 SetThemeBrush("FooterBorder", ColorFromHex("#305C423E"));
-                SetThemeBrush("GlassPanelBg", ColorFromHex("#A61C1716"));
-                SetThemeBrush("GlassPanelBorder", ColorFromHex("#405C423E"));
+
+                SetThemeBrush("GlassPanelBg", CreateVGradient(ColorFromHex("#241D1B"), ColorFromHex("#171211")));
+                SetThemeBrush("GlassPanelBorder", CreateVGradient(ColorFromHex("#5C423E"), ColorFromHex("#251B1A")));
+
                 SetThemeBrush("AccentColor", ColorFromHex("#C2A878"));
-                SetThemeBrush("PrimaryBtnBg", ColorFromHex("#773344"));
+
+                SetThemeBrush("PrimaryBtnBg", CreateVGradient3(ColorFromHex("#8C3C50"), ColorFromHex("#773344"), ColorFromHex("#5E2836")));
+                SetThemeBrush("PrimaryBtnBorder", CreateVGradient(ColorFromHex("#A44A62"), ColorFromHex("#481E29")));
                 SetThemeBrush("PrimaryBtnFg", ColorFromHex("#C2A878"));
-                SetThemeBrush("SecondaryBtnBg", ColorFromHex("#402D2220"));
-                SetThemeBrush("SecondaryBtnBorder", ColorFromHex("#405C423E"));
+                SetThemeBrush("PrimaryBtnHoverBg", CreateVGradient3(ColorFromHex("#9E445B"), ColorFromHex("#873A4D"), ColorFromHex("#6E2E3E")));
+                SetThemeBrush("PrimaryBtnHoverBorder", CreateVGradient(ColorFromHex("#BA5570"), ColorFromHex("#582432")));
+                SetThemeBrush("PrimaryBtnPressedBg", CreateVGradient(ColorFromHex("#4E202C"), ColorFromHex("#6E2E3E")));
+                SetThemeBrush("PrimaryBtnPressedBorder", CreateVGradient(ColorFromHex("#36161F"), ColorFromHex("#8C3C50")));
+
+                SetThemeBrush("SecondaryBtnBg", CreateVGradient3(ColorFromHex("#4A3430"), ColorFromHex("#362523"), ColorFromHex("#251917")));
+                SetThemeBrush("SecondaryBtnBorder", CreateVGradient(ColorFromHex("#6C4E49"), ColorFromHex("#2A1C1A")));
                 SetThemeBrush("SecondaryBtnFg", ColorFromHex("#C2A878"));
-                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#8014100F"));
-                SetThemeBrush("ModernTextBoxBorder", ColorFromHex("#505C423E"));
+                SetThemeBrush("SecondaryBtnHoverBg", CreateVGradient3(ColorFromHex("#5A403A"), ColorFromHex("#442F2C"), ColorFromHex("#2F201E")));
+                SetThemeBrush("SecondaryBtnHoverBorder", CreateVGradient(ColorFromHex("#8E6660"), ColorFromHex("#3E2926")));
+                SetThemeBrush("SecondaryBtnPressedBg", CreateVGradient(ColorFromHex("#1E1412"), ColorFromHex("#2D1E1B")));
+                SetThemeBrush("SecondaryBtnPressedBorder", CreateVGradient(ColorFromHex("#160E0D"), ColorFromHex("#4A3430")));
+
+                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#120E0D"));
+                SetThemeBrush("ModernTextBoxBorder", CreateVGradient(ColorFromHex("#181211"), ColorFromHex("#4E3834")));
                 SetThemeBrush("ModernTextBoxFg", ColorFromHex("#F0EAE0"));
-                SetThemeBrush("LogBoxBg", ColorFromHex("#500E0B0A"));
-                SetThemeBrush("LogBoxBorder", ColorFromHex("#305C423E"));
+
+                SetThemeBrush("LogBoxBg", ColorFromHex("#0E0A09"));
+                SetThemeBrush("LogBoxBorder", CreateVGradient(ColorFromHex("#140E0D"), ColorFromHex("#3C2C28")));
                 SetThemeBrush("LogBoxFg", ColorFromHex("#9C9286"));
+
                 SetThemeBrush("TextPrimary", ColorFromHex("#F0EAE0"));
                 SetThemeBrush("TextSecondary", ColorFromHex("#8A7F74"));
                 SetThemeBrush("TextMuted", ColorFromHex("#6E645A"));
-                SetThemeBrush("RecentItemBg", ColorFromHex("#35201B19"));
-                SetThemeBrush("RecentItemBorder", ColorFromHex("#255C423E"));
+
+                SetThemeBrush("RecentItemBg", CreateVGradient(ColorFromHex("#2C201D"), ColorFromHex("#1B1412")));
+                SetThemeBrush("RecentItemBorder", CreateVGradient(ColorFromHex("#5C423E"), ColorFromHex("#221816")));
+                SetThemeBrush("RecentItemHoverBg", CreateVGradient(ColorFromHex("#3A2A26"), ColorFromHex("#241A18")));
+                SetThemeBrush("RecentItemHoverBorder", CreateVGradient(ColorFromHex("#8A645E"), ColorFromHex("#3A2825")));
+
                 SetThemeBrush("ThumbnailBg", ColorFromHex("#1A1413"));
                 SetThemeBrush("ThumbnailBorder", ColorFromHex("#35C2A878"));
-                SetThemeBrush("ArrowBtnBg", ColorFromHex("#25773344"));
-                SetThemeBrush("ArrowBtnBorder", ColorFromHex("#40773344"));
-                SetThemeBrush("BadgeBg", ColorFromHex("#352623"));
-                SetThemeBrush("BadgeBorder", ColorFromHex("#505C423E"));
+
+                SetThemeBrush("ArrowBtnBg", CreateVGradient(ColorFromHex("#44222E"), ColorFromHex("#2C151E")));
+                SetThemeBrush("ArrowBtnBorder", CreateVGradient(ColorFromHex("#663345"), ColorFromHex("#220F16")));
+                SetThemeBrush("ArrowBtnHoverBg", CreateVGradient(ColorFromHex("#552B3A"), ColorFromHex("#381B26")));
+                SetThemeBrush("ArrowBtnHoverBorder", CreateVGradient(ColorFromHex("#824258"), ColorFromHex("#301520")));
+
+                SetThemeBrush("BadgeBg", CreateVGradient(ColorFromHex("#3E2B27"), ColorFromHex("#261A18")));
+                SetThemeBrush("BadgeBorder", CreateVGradient(ColorFromHex("#5C403A"), ColorFromHex("#261A18")));
             }
+        }
+
+        private void SetThemeBrush(string key, Brush brush)
+        {
+            Resources[key] = brush;
+        }
+
+        private static LinearGradientBrush CreateVGradient(Color top, Color bottom)
+        {
+            var brush = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new GradientStop(top, 0.0),
+                    new GradientStop(bottom, 1.0)
+                },
+                new Point(0, 0), new Point(0, 1));
+            brush.Freeze();
+            return brush;
+        }
+
+        private static LinearGradientBrush CreateVGradient3(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new GradientStop(top, 0.0),
+                    new GradientStop(mid, 0.5),
+                    new GradientStop(bottom, 1.0)
+                },
+                new Point(0, 0), new Point(0, 1));
+            brush.Freeze();
+            return brush;
         }
 
         private void SetThemeBrush(string key, Color color)
@@ -1224,8 +1313,12 @@ namespace VibeDesk
                     var list = JsonSerializer.Deserialize<List<RecentConnection>>(json);
                     if (list != null)
                     {
-                        _recentConnections = new ObservableCollection<RecentConnection>(
-                            list.OrderByDescending(r => r.LastConnected).Take(10));
+                        // Исключаем собственный DeviceId (нельзя подключаться к самому себе) и пустые записи
+                        var filtered = list
+                            .Where(r => !string.IsNullOrWhiteSpace(r.DeviceId) && r.DeviceId != _myDeviceId)
+                            .OrderByDescending(r => r.LastConnected)
+                            .Take(10);
+                        _recentConnections = new ObservableCollection<RecentConnection>(filtered);
                     }
                 }
             }
@@ -1292,11 +1385,15 @@ namespace VibeDesk
             catch { }
         }
 
-        private void AddRecentConnection(string deviceId)
+        private void AddRecentConnection(string target)
         {
-            if (string.IsNullOrWhiteSpace(deviceId) || deviceId.Length != 6) return;
+            if (string.IsNullOrWhiteSpace(target)) return;
+            string cleanId = target.Trim().Replace(" ", "");
 
-            var existing = _recentConnections.FirstOrDefault(r => r.DeviceId == deviceId);
+            // Не добавляем собственный компьютер в недавние
+            if (cleanId.Equals(_myDeviceId, StringComparison.OrdinalIgnoreCase)) return;
+
+            var existing = _recentConnections.FirstOrDefault(r => r.DeviceId.Equals(cleanId, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
                 existing.LastConnected = DateTime.Now;
@@ -1310,7 +1407,7 @@ namespace VibeDesk
             {
                 _recentConnections.Insert(0, new RecentConnection
                 {
-                    DeviceId = deviceId,
+                    DeviceId = cleanId,
                     LastConnected = DateTime.Now,
                     IsOnline = true
                 });
@@ -1319,6 +1416,23 @@ namespace VibeDesk
                     _recentConnections.RemoveAt(_recentConnections.Count - 1);
             }
 
+            SaveRecentConnections();
+            RefreshRecentVisibility();
+        }
+
+        private void MenuItemRemoveRecent_Click(object sender, RoutedEventArgs e)
+        {
+            if (ListRecentConnections.SelectedItem is RecentConnection rc)
+            {
+                _recentConnections.Remove(rc);
+                SaveRecentConnections();
+                RefreshRecentVisibility();
+            }
+        }
+
+        private void MenuItemClearAllRecent_Click(object sender, RoutedEventArgs e)
+        {
+            _recentConnections.Clear();
             SaveRecentConnections();
             RefreshRecentVisibility();
         }

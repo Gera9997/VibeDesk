@@ -100,6 +100,17 @@ namespace VibeDesk.UI
             {
                 Dispatcher.InvokeAsync(() => OverlayConnecting.Visibility = Visibility.Collapsed);
             };
+            _stripeRenderer.OnInitialScreenRendered += () =>
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    if (!_hasSavedInitialThumbnail)
+                    {
+                        _hasSavedInitialThumbnail = true;
+                        SaveThumbnail();
+                    }
+                });
+            };
 
             _client.OnStripeReady += stripe => _stripeRenderer.EnqueueAssembledStripe(stripe);
             _client.OnFrameReceived += OnFrameReceived;
@@ -107,6 +118,9 @@ namespace VibeDesk.UI
             _client.OnDisconnected += OnDisconnected;
             _client.OnClipboardReceived += OnClipboardReceived;
             _client.OnCursorPositionReceived += OnCursorPositionReceived;
+
+            // Сразу инициализируем переключатель мониторов из уже полученных данных клиента
+            UpdateMonitorsUi((byte)Math.Max(1, _client.RemoteMonitorCount), (byte)_client.RemoteActiveMonitorIndex);
 
             _renderRunning = true;
             _renderThread = new Thread(RenderLoop)
@@ -196,44 +210,55 @@ namespace VibeDesk.UI
         {
             Dispatcher.InvokeAsync(() =>
             {
-                if (monitorCount >= 2)
+                UpdateMonitorsUi(monitorCount, activeIndex);
+            });
+        }
+
+        private void UpdateMonitorsUi(byte monitorCount, byte activeIndex)
+        {
+            PanelMonitors.Children.Clear();
+            PanelMonitors.Visibility = Visibility.Visible;
+
+            byte count = Math.Max((byte)1, monitorCount);
+            for (byte i = 0; i < count; i++)
+            {
+                byte monIndex = i;
+                bool isActive = (i == activeIndex);
+                var btn = new Button
                 {
-                    PanelMonitors.Visibility = Visibility.Visible;
-                    PanelMonitors.Children.Clear();
+                    Content = $"🖥️ {i + 1}",
+                    ToolTip = count > 1 
+                        ? (isActive ? $"Монитор {i + 1} (активен сейчас)" : $"Переключить на Монитор {i + 1}") 
+                        : "Монитор 1 (единственный экран)",
+                    Margin = new Thickness(0, 0, 4, 0),
+                    Padding = new Thickness(7, 2, 7, 2),
+                    FontSize = 10,
+                    FontWeight = isActive ? FontWeights.Bold : FontWeights.SemiBold,
+                    Background = isActive 
+                        ? (Brush)new BrushConverter().ConvertFromString("#2E7D32")! 
+                        : (Brush)new BrushConverter().ConvertFromString("#22222C")!,
+                    Foreground = isActive ? Brushes.White : (Brush)new BrushConverter().ConvertFromString("#A0A0B0")!,
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = isActive 
+                        ? (Brush)new BrushConverter().ConvertFromString("#4CAF50")! 
+                        : (Brush)new BrushConverter().ConvertFromString("#383848")!,
+                    Cursor = count > 1 ? Cursors.Hand : Cursors.Arrow,
+                    IsEnabled = count > 1 || !isActive
+                };
 
-                    for (byte i = 0; i < monitorCount; i++)
+                if (count > 1)
+                {
+                    btn.Click += (s, e) =>
                     {
-                        byte monIndex = i;
-                        bool isActive = (i == activeIndex);
-                        var btn = new Button
-                        {
-                            Content = $"🖥️ {i + 1}",
-                            ToolTip = $"Переключить на монитор {i + 1}",
-                            Margin = new Thickness(0, 0, 3, 0),
-                            Padding = new Thickness(5, 1, 5, 1),
-                            FontSize = 9.5,
-                            FontWeight = isActive ? FontWeights.Bold : FontWeights.Normal,
-                            Background = isActive ? (Brush)new BrushConverter().ConvertFromString("#2E7D32")! : (Brush)new BrushConverter().ConvertFromString("#282836")!,
-                            Foreground = Brushes.White,
-                            BorderThickness = new Thickness(1),
-                            BorderBrush = isActive ? (Brush)new BrushConverter().ConvertFromString("#4CAF50")! : (Brush)new BrushConverter().ConvertFromString("#3D3D48")!,
-                            Cursor = Cursors.Hand
-                        };
-
-                        btn.Click += (s, e) =>
+                        if (monIndex != activeIndex)
                         {
                             _client.SendSwitchMonitor(monIndex);
-                        };
+                        }
+                    };
+                }
 
-                        PanelMonitors.Children.Add(btn);
-                    }
-                }
-                else
-                {
-                    PanelMonitors.Visibility = Visibility.Collapsed;
-                    PanelMonitors.Children.Clear();
-                }
-            });
+                PanelMonitors.Children.Add(btn);
+            }
         }
 
         private void OnFrameReceived(byte[] payload)
@@ -463,7 +488,7 @@ namespace VibeDesk.UI
                 }
 
                 _renderedStripsCount++;
-                if (!_hasSavedInitialThumbnail && _renderedStripsCount >= 10 && _canvasBitmap != null)
+                if (!_hasSavedInitialThumbnail && _renderedStripsCount >= 45 && _canvasBitmap != null)
                 {
                     _hasSavedInitialThumbnail = true;
                     SaveThumbnail();

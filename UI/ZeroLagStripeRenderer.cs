@@ -42,6 +42,7 @@ namespace VibeDesk.UI
         private int _bitmapHeight = 0;
 
         public event Action? OnFirstFrameRendered;
+        public event Action? OnInitialScreenRendered;
         public int RenderedFramesCount { get; private set; }
         public WriteableBitmap? CanvasBitmap => _writeableBitmap;
         public int CanvasWidth => _bitmapWidth;
@@ -220,6 +221,10 @@ namespace VibeDesk.UI
                     if (RenderedFramesCount == 1)
                     {
                         OnFirstFrameRendered?.Invoke();
+                    }
+                    else if (RenderedFramesCount == 45)
+                    {
+                        OnInitialScreenRendered?.Invoke();
                     }
                 }
             }

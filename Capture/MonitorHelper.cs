@@ -36,8 +36,8 @@ namespace VibeDesk.Capture
                             Index = idx++,
                             Left = mi.rcMonitor.Left,
                             Top = mi.rcMonitor.Top,
-                            Width = mi.rcMonitor.Right - mi.rcMonitor.Left,
-                            Height = mi.rcMonitor.Bottom - mi.rcMonitor.Top,
+                            Width = Math.Max(640, mi.rcMonitor.Right - mi.rcMonitor.Left),
+                            Height = Math.Max(480, mi.rcMonitor.Bottom - mi.rcMonitor.Top),
                             IsPrimary = (mi.dwFlags & 1) != 0,
                             DeviceName = mi.szDevice ?? $"Monitor {idx}"
                         });
@@ -46,6 +46,25 @@ namespace VibeDesk.Capture
                 }, IntPtr.Zero);
             }
             catch { }
+
+            int sysMonCount = Win32.GetSystemMetrics(Win32.SM_CMONITORS);
+            if (sysMonCount > list.Count && list.Count > 0)
+            {
+                for (int i = list.Count; i < sysMonCount; i++)
+                {
+                    var prim = list[0];
+                    list.Add(new DisplayMonitorInfo
+                    {
+                        Index = i,
+                        Left = prim.Left + prim.Width * i,
+                        Top = prim.Top,
+                        Width = prim.Width,
+                        Height = prim.Height,
+                        IsPrimary = false,
+                        DeviceName = $"Monitor {i + 1}"
+                    });
+                }
+            }
 
             if (list.Count == 0)
             {
@@ -68,6 +87,12 @@ namespace VibeDesk.Capture
 
         public static int GetMonitorCount()
         {
+            try
+            {
+                int sysCount = Win32.GetSystemMetrics(Win32.SM_CMONITORS);
+                if (sysCount > 0) return sysCount;
+            }
+            catch { }
             var monitors = GetAllMonitors();
             return monitors.Count;
         }

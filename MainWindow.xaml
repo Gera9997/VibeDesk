@@ -43,77 +43,141 @@
         <SolidColorBrush x:Key="BadgeBg" Color="#352623"/>
         <SolidColorBrush x:Key="BadgeBorder" Color="#505C423E"/>
 
-        <!-- Glass Surface Panel (eliminates nested frames, allows background wallpaper to glow through) -->
+        <!-- Dynamic Gradient / Theme Placeholders for Neumorphism -->
+        <SolidColorBrush x:Key="PrimaryBtnBorder" Color="#70757C"/>
+        <SolidColorBrush x:Key="PrimaryBtnHoverBg" Color="#D2D6DC"/>
+        <SolidColorBrush x:Key="PrimaryBtnHoverBorder" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="PrimaryBtnPressedBg" Color="#9FA4AA"/>
+        <SolidColorBrush x:Key="PrimaryBtnPressedBorder" Color="#50545A"/>
+        <SolidColorBrush x:Key="SecondaryBtnHoverBg" Color="#282833"/>
+        <SolidColorBrush x:Key="SecondaryBtnHoverBorder" Color="#787896"/>
+        <SolidColorBrush x:Key="SecondaryBtnPressedBg" Color="#101015"/>
+        <SolidColorBrush x:Key="SecondaryBtnPressedBorder" Color="#383846"/>
+        <SolidColorBrush x:Key="RecentItemHoverBg" Color="#262632"/>
+        <SolidColorBrush x:Key="RecentItemHoverBorder" Color="#657080"/>
+        <SolidColorBrush x:Key="ArrowBtnHoverBg" Color="#404050"/>
+        <SolidColorBrush x:Key="ArrowBtnHoverBorder" Color="#787892"/>
+
+        <!-- Neumorphic Surface Panel (Soft raised tactile card) -->
         <Style x:Key="GlassPanel" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource GlassPanelBg}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Padding" Value="24"/>
+            <Setter Property="CornerRadius" Value="20"/>
+            <Setter Property="Padding" Value="22"/>
             <Setter Property="Margin" Value="8"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="24" Direction="270" ShadowDepth="5" Color="#000000" Opacity="0.55" RenderingBias="Performance"/>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- Primary Action Button -->
+        <!-- Primary Action Button (Convex tactile button with metallic bevel & soft shadow) -->
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource PrimaryBtnBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryBtnFg}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="18,10"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBtnBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="24,12"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="BtnShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="14">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="14" Direction="270" ShadowDepth="4" Color="#000000" Opacity="0.55"/>
+                                </Border.Effect>
+                            </Border>
+                            <Border x:Name="BtnBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="14"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource PrimaryBtnHoverBg}"/>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource PrimaryBtnHoverBorder}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource PrimaryBtnPressedBg}"/>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource PrimaryBtnPressedBorder}"/>
+                                <Setter TargetName="BtnBorder" Property="Margin" Value="0,2,0,-2"/>
+                                <Setter TargetName="BtnShadow" Property="Margin" Value="0,2,0,-2"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="BtnBorder" Property="Opacity" Value="0.4"/>
+                                <Setter TargetName="BtnShadow" Property="Opacity" Value="0.2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Opacity" Value="0.88"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.45"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
-        <!-- Secondary Button -->
+        <!-- Secondary Button (Soft raised convex pill with ambient bevel & soft shadow) -->
         <Style x:Key="SecondaryButton" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource SecondaryBtnFg}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBtnBorder}"/>
-            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="SecShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" Direction="270" ShadowDepth="3" Color="#000000" Opacity="0.45"/>
+                                </Border.Effect>
+                            </Border>
+                            <Border x:Name="SecBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="12"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SecBorder" Property="Background" Value="{DynamicResource SecondaryBtnHoverBg}"/>
+                                <Setter TargetName="SecBorder" Property="BorderBrush" Value="{DynamicResource SecondaryBtnHoverBorder}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="SecBorder" Property="Background" Value="{DynamicResource SecondaryBtnPressedBg}"/>
+                                <Setter TargetName="SecBorder" Property="BorderBrush" Value="{DynamicResource SecondaryBtnPressedBorder}"/>
+                                <Setter TargetName="SecBorder" Property="Margin" Value="0,2,0,-2"/>
+                                <Setter TargetName="SecShadow" Property="Margin" Value="0,2,0,-2"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="SecBorder" Property="Opacity" Value="0.4"/>
+                                <Setter TargetName="SecShadow" Property="Opacity" Value="0.2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Opacity" Value="0.85"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}"/>
 
-        <!-- Modern Input TextBox -->
+        <!-- Modern Input TextBox (Concave / Inset debossed container) -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource ModernTextBoxBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource ModernTextBoxFg}"/>
@@ -121,26 +185,27 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="14,9"/>
+            <Setter Property="Padding" Value="16,11"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="CaretBrush" Value="{DynamicResource AccentColor}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}"
+                        <Border x:Name="TxtBoxBorder"
+                                Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="7">
+                                CornerRadius="14">
                             <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="TxtBoxBorder" Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <!-- Dark Styled ComboBox (prevents white-on-white text issues) -->
@@ -158,30 +223,45 @@
             <Setter Property="Padding" Value="6,4"/>
         </Style>
 
-        <!-- Recent Connection Item -->
+        <!-- Recent Connection Item: Seamless Neumorphic Card with Large Screenshot Gradient -->
         <Style x:Key="RecentItemStyle" TargetType="ListBoxItem">
             <Setter Property="Background" Value="{DynamicResource RecentItemBg}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{DynamicResource RecentItemBorder}"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter/>
-                        </Border>
+                        <Grid>
+                            <!-- Ambient soft shadow -->
+                            <Border x:Name="ItemShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="16"
+                                    Margin="0">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Color="#000000" Opacity="0.45"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Main Card with Rounded Corners and Content Clipping -->
+                            <Border x:Name="ItemCard"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="16"
+                                    ClipToBounds="True">
+                                <ContentPresenter/>
+                            </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+                                <Setter TargetName="ItemCard" Property="Background" Value="{DynamicResource RecentItemHoverBg}"/>
+                                <Setter TargetName="ItemCard" Property="BorderBrush" Value="{DynamicResource RecentItemHoverBorder}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+                                <Setter TargetName="ItemCard" Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -227,7 +307,7 @@
                         <TextBlock Text="Desk" Foreground="{DynamicResource TextPrimary}" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
                         <Border Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1" CornerRadius="5"
                                 Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="TxtAppVersion" Text="v1.5.8" Foreground="{DynamicResource AccentColor}" FontSize="11" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="TxtAppVersion" Text="v1.6.0" Foreground="{DynamicResource AccentColor}" FontSize="11" FontWeight="SemiBold"/>
                         </Border>
                     </StackPanel>
 
@@ -279,7 +359,7 @@
             <!-- Main Content Area: Left = Recent Connections, Right = This PC + Remote Control -->
             <Grid Grid.Row="2" Margin="12,8,12,8">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="340"/>
+                    <ColumnDefinition Width="360"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
@@ -313,53 +393,87 @@
                                      PreviewMouseLeftButtonUp="ListRecentConnections_PreviewMouseLeftButtonUp"
                                      MouseDoubleClick="ListRecentConnections_MouseDoubleClick"
                                      Visibility="Collapsed">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Удалить из недавних" Click="MenuItemRemoveRecent_Click"/>
+                                        <MenuItem Header="Очистить все недавние" Click="MenuItemClearAllRecent_Click"/>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Height="62">
-                                            <Grid.ColumnDefinitions>
-                                                <!-- Remote screen thumbnail / wallpaper -->
-                                                <ColumnDefinition Width="94"/>
-                                                <!-- Single ID + Availability Circle -->
-                                                <ColumnDefinition Width="*"/>
-                                                <!-- Connect arrow -->
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
+                                        <Grid Height="82" ClipToBounds="True">
+                                            <!-- Background Layer 1: Large Edge-to-Edge Screenshot spanning across -->
+                                            <Image Source="{Binding ThumbnailSource}"
+                                                   Stretch="UniformToFill"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"
+                                                   Width="260"
+                                                   Height="82">
+                                                <Image.OpacityMask>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                        <GradientStop Color="#FFFFFFFF" Offset="0.0"/>
+                                                        <GradientStop Color="#E8FFFFFF" Offset="0.30"/>
+                                                        <GradientStop Color="#60FFFFFF" Offset="0.65"/>
+                                                        <GradientStop Color="#00FFFFFF" Offset="0.96"/>
+                                                    </LinearGradientBrush>
+                                                </Image.OpacityMask>
+                                            </Image>
 
-                                            <!-- Thumbnail Container (Screenshot or Wallpaper) -->
-                                            <Border Grid.Column="0" CornerRadius="6" ClipToBounds="True"
-                                                    Background="{DynamicResource ThumbnailBg}" BorderBrush="{DynamicResource ThumbnailBorder}" BorderThickness="1">
-                                                <Grid>
-                                                    <Image Source="{Binding ThumbnailSource}" Stretch="UniformToFill"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <!-- Subtle dark vignette overlay -->
-                                                    <Border Background="#20000000"/>
-                                                </Grid>
-                                            </Border>
+                                            <!-- Layer 2: Smooth dark gradient blend across the full card width -->
+                                            <Rectangle HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                                <Rectangle.Fill>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                        <GradientStop Color="#00000000" Offset="0.0"/>
+                                                        <GradientStop Color="#1008080A" Offset="0.25"/>
+                                                        <GradientStop Color="#8508080A" Offset="0.55"/>
+                                                        <GradientStop Color="#EA08080A" Offset="0.80"/>
+                                                        <GradientStop Color="#FF08080A" Offset="0.95"/>
+                                                    </LinearGradientBrush>
+                                                </Rectangle.Fill>
+                                            </Rectangle>
 
-                                            <!-- Info: Only ONE ID + Status Circle + Subtitle -->
-                                            <StackPanel Grid.Column="1" Margin="12,0,6,0" VerticalAlignment="Center">
-                                                <!-- Top row: Status Circle + ID -->
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Ellipse Width="8" Height="8" Fill="{Binding StatusBrush}"
-                                                             ToolTip="{Binding StatusToolTip}"
-                                                             Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding FormattedId}" Foreground="{DynamicResource TextPrimary}"
-                                                               FontSize="15" FontWeight="Bold" FontFamily="Consolas"
-                                                               VerticalAlignment="Center"/>
+                                            <!-- Layer 3: Connection Info & Action Button -->
+                                            <Grid Margin="16,8,16,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="65"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Right side: Status, ID & Subtitle -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,8,0">
+                                                    <!-- Status dot + ID -->
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Ellipse Width="8.5" Height="8.5" Fill="{Binding StatusBrush}"
+                                                                 ToolTip="{Binding StatusToolTip}"
+                                                                 Margin="0,0,8,0" VerticalAlignment="Center">
+                                                            <Ellipse.Effect>
+                                                                <DropShadowEffect BlurRadius="6" Color="#00E676" Opacity="0.7" ShadowDepth="0"/>
+                                                            </Ellipse.Effect>
+                                                        </Ellipse>
+                                                        <TextBlock Text="{Binding FormattedId}" Foreground="{DynamicResource TextPrimary}"
+                                                                   FontSize="16" FontWeight="Bold" FontFamily="Consolas"
+                                                                   VerticalAlignment="Center"/>
+                                                    </StackPanel>
+
+                                                    <!-- Subtitle: status state and timestamp -->
+                                                    <TextBlock Text="{Binding StatusSubtitle}" Foreground="{DynamicResource TextSecondary}"
+                                                               FontSize="11" Margin="16.5,4,0,0"/>
                                                 </StackPanel>
 
-                                                <!-- Subtitle: status state and timestamp -->
-                                                <TextBlock Text="{Binding StatusSubtitle}" Foreground="{DynamicResource TextSecondary}"
-                                                           FontSize="11" Margin="16,4,0,0"/>
-                                            </StackPanel>
-
-                                            <!-- Connect arrow button -->
-                                            <Border Grid.Column="2" Width="26" Height="26" CornerRadius="13"
-                                                    Background="{DynamicResource ArrowBtnBg}" BorderBrush="{DynamicResource ArrowBtnBorder}" BorderThickness="1"
-                                                    VerticalAlignment="Center" Margin="0,0,2,0">
-                                                <TextBlock Text="→" Foreground="{DynamicResource AccentColor}" FontSize="13" FontWeight="Bold"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
-                                            </Border>
+                                                <!-- Volumetric Circular Arrow Button -->
+                                                <Border Grid.Column="2" Width="32" Height="32" CornerRadius="16"
+                                                        Background="{DynamicResource ArrowBtnBg}"
+                                                        BorderBrush="{DynamicResource ArrowBtnBorder}"
+                                                        BorderThickness="1"
+                                                        VerticalAlignment="Center">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect BlurRadius="6" Direction="270" ShadowDepth="2" Color="#000000" Opacity="0.4"/>
+                                                    </Border.Effect>
+                                                    <TextBlock Text="→" Foreground="{DynamicResource AccentColor}" FontSize="15" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
+                                                </Border>
+                                            </Grid>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -450,7 +564,7 @@
                                 </DockPanel>
 
                                 <Border Grid.Row="1" Background="{DynamicResource LogBoxBg}" BorderBrush="{DynamicResource LogBoxBorder}"
-                                        BorderThickness="1" CornerRadius="8" Padding="12">
+                                        BorderThickness="1" CornerRadius="13" Padding="12">
                                     <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto">
                                         <TextBox x:Name="TxtClientLog"
                                                  Background="Transparent"
@@ -474,8 +588,7 @@
                 <DockPanel>
                     <TextBlock x:Name="TxtFooterStatus" Text="VibeDesk P2P, UDP direct"
                                Foreground="{DynamicResource TextMuted}" FontSize="11" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="TxtFooterVersion" Text="VibeDesk"
-                               Foreground="{DynamicResource TextMuted}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtFooterVersion" Visibility="Collapsed"/>
                 </DockPanel>
             </Border>
 

@@ -190,8 +190,9 @@ namespace VibeDesk.Network
                 OnClientConnected?.Invoke(peer);
 
                 // Send screen geometry and multi-monitor info
-                int totalMons = _captureManager?.TotalMonitors ?? 1;
+                int totalMons = _captureManager?.TotalMonitors ?? MonitorHelper.GetMonitorCount();
                 int curMon = _captureManager?.CurrentMonitorIndex ?? 0;
+                OnStatusChanged?.Invoke($"🖥️ [Дисплеи] Обнаружено мониторов: {totalMons}. Активен #{curMon + 1} ({ScreenWidth}x{ScreenHeight})");
                 peer.Send(PacketBuilder.CreateScreenInfo(ScreenWidth, ScreenHeight, (byte)totalMons, (byte)curMon), DeliveryMethod.ReliableOrdered);
             };
 
@@ -267,25 +268,35 @@ namespace VibeDesk.Network
             };
             _streamingThread.Start();
 
-            try
+            Task.Run(() =>
             {
-                _audioCapture = new AudioCaptureManager();
-                _audioCapture.OnAudioChunkReady += (opusData, length) =>
+                try
                 {
-                    var peer = _connectedPeer;
-                    if (peer != null && peer.ConnectionState == ConnectionState.Connected && _isAudioStreamingEnabled)
+                    var capture = new AudioCaptureManager();
+                    capture.OnAudioChunkReady += (opusData, length) =>
                     {
-                        uint seq = unchecked(++_audioSequence);
-                        byte[] packet = PacketBuilder.CreateAudioChunk(seq, opusData, 0, length);
-                        peer.Send(packet, DeliveryMethod.Sequenced);
+                        var peer = _connectedPeer;
+                        if (peer != null && peer.ConnectionState == ConnectionState.Connected && _isAudioStreamingEnabled)
+                        {
+                            uint seq = unchecked(++_audioSequence);
+                            byte[] packet = PacketBuilder.CreateAudioChunk(seq, opusData, 0, length);
+                            peer.Send(packet, DeliveryMethod.Sequenced);
+                        }
+                    };
+                    if (capture.Start())
+                    {
+                        _audioCapture = capture;
                     }
-                };
-                _audioCapture.Start();
-            }
-            catch (Exception ex)
-            {
-                OnStatusChanged?.Invoke($"[Звук] Предупреждение: не удалось инициализировать захват звука: {ex.Message}");
-            }
+                    else
+                    {
+                        capture.Dispose();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged?.Invoke($"[Звук] Предупреждение: не удалось инициализировать захват звука: {ex.Message}");
+                }
+            });
 
             OnStatusChanged?.Invoke($"Хост запущен на порту {Port}. Движок: {_captureManager.ActiveEngineName}, FPS: {_targetFps}, Кэп: {_maxBitrateKbps} Кбит/с");
             return true;

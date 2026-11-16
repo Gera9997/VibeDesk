@@ -153,13 +153,24 @@ namespace VibeDesk.Network
             {
                 _serverPeer = peer;
                 OnStatusChanged?.Invoke($"Подключено к хосту: {peer.Address}");
-                try
-                {
-                    _audioPlayback = new AudioPlaybackManager();
-                    _audioPlayback.Start();
-                }
-                catch { }
                 OnConnected?.Invoke();
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var playback = new AudioPlaybackManager();
+                        if (playback.Start())
+                        {
+                            _audioPlayback = playback;
+                        }
+                        else
+                        {
+                            playback.Dispose();
+                        }
+                    }
+                    catch { }
+                });
             };
 
             _listener.PeerDisconnectedEvent += (peer, info) =>
@@ -389,6 +400,7 @@ namespace VibeDesk.Network
                         }
                         RemoteMonitorCount = monCount;
                         RemoteActiveMonitorIndex = activeMon;
+                        OnStatusChanged?.Invoke($"🖥️ [Дисплеи] Удаленный ПК имеет {monCount} монитор(ов). Активен #{activeMon + 1} ({RemoteWidth}x{RemoteHeight})");
                         OnScreenInfoReceived?.Invoke(RemoteWidth, RemoteHeight, monCount, activeMon);
                     }
                     break;

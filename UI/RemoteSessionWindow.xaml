@@ -46,11 +46,13 @@
                     <Border Background="#00C853" Width="7" Height="7" CornerRadius="3.5" Margin="0,0,6,0"/>
                     <TextBlock Text="Подключено" Foreground="#A0A0B0" FontWeight="SemiBold" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center"/>
                     
+                    <!-- Prominent Monitor Switcher: Right next to session status, never clipped! -->
+                    <StackPanel x:Name="PanelMonitors" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0" Visibility="Visible"/>
+
                     <TextBlock x:Name="TxtStats" Text="FPS: 0 | Пинг: 0 мс | 0 Кб/с" Foreground="#7A7A90" FontSize="10.5" VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <StackPanel x:Name="PanelMonitors" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0" Visibility="Collapsed"/>
                     <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <ComboBox x:Name="CmbStreamCodec" Width="120" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="10" Margin="0,0,8,0">
                         <ComboBoxItem Content="⚡ Турбо-MJPEG"/>

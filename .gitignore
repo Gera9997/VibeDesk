@@ -3,6 +3,9 @@ bin/
 obj/
 publish/
 publish_new/
+publish_v2/
+publish_standalone/
+publish_standalone_v2/
 *.exe
 *.user
 *.userosscache
