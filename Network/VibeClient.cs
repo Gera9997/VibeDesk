@@ -53,6 +53,7 @@ namespace VibeDesk.Network
 
         public NetManager RawNetManager => _netClient;
         public int LocalPort => _netClient.LocalPort;
+        public int InterfaceIndex { get; set; } = -1;
         public IPEndPoint? DiscoveredStunEndPoint { get; private set; }
 
         public async Task<IPEndPoint?> QueryStunOverActiveSocketAsync(int timeoutMs = 1500)
@@ -576,7 +577,7 @@ namespace VibeDesk.Network
             }
         }
 
-        private static void ConfigureSocketBuffers(NetManager netManager)
+        private void ConfigureSocketBuffers(NetManager netManager)
         {
             try
             {
@@ -585,6 +586,17 @@ namespace VibeDesk.Network
                 {
                     socket.SendBufferSize = ProtocolConstants.SocketBufferSize;
                     socket.ReceiveBufferSize = ProtocolConstants.SocketBufferSize;
+
+                    // Bind client socket directly to the physical network adapter index to bypass VPN default routes
+                    if (InterfaceIndex > 0 && socket.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        try
+                        {
+                            int netOrder = IPAddress.HostToNetworkOrder(InterfaceIndex);
+                            socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)31, netOrder);
+                        }
+                        catch { }
+                    }
                 }
             }
             catch { }

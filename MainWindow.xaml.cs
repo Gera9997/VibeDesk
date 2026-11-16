@@ -155,6 +155,7 @@ namespace VibeDesk
         private IPEndPoint? _physicalPublicEndPoint;
         private IPEndPoint? _lastPunchReceivedFrom;
         private string _myLocalIp = "127.0.0.1";
+        private int _myInterfaceIndex = -1;
         private int _targetFps = 25;
         private float _targetScale = 0.75f;
 
@@ -354,6 +355,16 @@ namespace VibeDesk
                     }
 
                     var ipProps = ni.GetIPProperties();
+                    try
+                    {
+                        var ipv4 = ipProps.GetIPv4Properties();
+                        if (ipv4 != null)
+                        {
+                            _myInterfaceIndex = ipv4.Index;
+                        }
+                    }
+                    catch { }
+
                     foreach (var addr in ipProps.UnicastAddresses)
                     {
                         if (addr.Address.AddressFamily == AddressFamily.InterNetwork &&
@@ -364,7 +375,7 @@ namespace VibeDesk
                         {
                             _myLocalIp = addr.Address.ToString();
                             TxtLocalIp.Text = $"{_myLocalIp}:{_host.Port}";
-                            AppendLog($"🌐 Физический LAN IP найден через '{ni.Name}': {_myLocalIp}");
+                            AppendLog($"🌐 Физический LAN IP найден через '{ni.Name}' (ifIndex {_myInterfaceIndex}): {_myLocalIp}");
                             return;
                         }
                     }
@@ -384,7 +395,7 @@ namespace VibeDesk
             TxtPublicEndpoint.Text = "STUN поиск...";
             AppendLog("🔍 Запрос STUN (Cloudflare / Google)...");
 
-            var (stunEp, isSym, msg) = await StunResolver.ProbeAsync(_host.Port, _myLocalIp);
+            var (stunEp, isSym, msg) = await StunResolver.ProbeAsync(_host.Port, _myLocalIp, _myInterfaceIndex);
             if (stunEp != null)
             {
                 _physicalPublicEndPoint = stunEp;
@@ -452,6 +463,7 @@ namespace VibeDesk
                 });
             };
 
+            _host.InterfaceIndex = _myInterfaceIndex;
             bool started = _host.Start(_targetFps, jpegQuality: 55, scale: _targetScale, bindIp: _myLocalIp, maxBitrateKbps: 3500);
             if (started)
             {
@@ -644,7 +656,7 @@ namespace VibeDesk
                     FindRealLocalIp();
 
                     // 2. Узнаем реальный внешний IP:Port открытого сокета клиента через STUN ДО запуска клиента!
-                    var (clientStunEp, _, clientStunMsg) = await StunResolver.ProbeAsync(VibeClient.DefaultClientPort, _myLocalIp);
+                    var (clientStunEp, _, clientStunMsg) = await StunResolver.ProbeAsync(VibeClient.DefaultClientPort, _myLocalIp, _myInterfaceIndex);
                     if (clientStunEp != null)
                     {
                         AppendLog($"🌐 [STUN Клиент] {clientStunMsg}");
@@ -652,6 +664,7 @@ namespace VibeDesk
 
                     // 3. Запускаем клиентский сокет на порту 15891
                     var client = new VibeClient();
+                    client.InterfaceIndex = _myInterfaceIndex;
                     client.Start(VibeClient.DefaultClientPort, bindIp: _myLocalIp);
                     client.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
                     client.OnPunchReceived += ep => _lastPunchReceivedFrom = ep;
@@ -934,6 +947,7 @@ namespace VibeDesk
 
                 // Direct IP mode
                 var directClient = new VibeClient();
+                directClient.InterfaceIndex = _myInterfaceIndex;
                 directClient.Start(VibeClient.DefaultClientPort);
                 directClient.OnStatusChanged += status => Dispatcher.InvokeAsync(() => AppendLog($"[Клиент] {status}"));
                 bool directConnected = await TryConnectAsync(directClient, connectIp, connectPort, timeoutMs: 6000);

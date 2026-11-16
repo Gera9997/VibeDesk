@@ -58,6 +58,7 @@ namespace VibeDesk.Network
         public string ActiveCaptureEngine => _captureManager?.ActiveEngineName ?? "None";
         public bool HasClient => _connectedPeer != null && _connectedPeer.ConnectionState == ConnectionState.Connected;
         public string DeviceId { get; set; } = string.Empty;
+        public int InterfaceIndex { get; set; } = -1;
 
         public int CurrentFps { get; private set; }
         public double OutgoingKbps { get; private set; }
@@ -648,7 +649,7 @@ namespace VibeDesk.Network
             }
         }
 
-        private static void ConfigureSocketBuffers(NetManager netManager)
+        private void ConfigureSocketBuffers(NetManager netManager)
         {
             try
             {
@@ -657,6 +658,17 @@ namespace VibeDesk.Network
                 {
                     socket.SendBufferSize = ProtocolConstants.SocketBufferSize;
                     socket.ReceiveBufferSize = ProtocolConstants.SocketBufferSize;
+
+                    // Bind socket directly to the physical network adapter index to bypass VPN default routes
+                    if (InterfaceIndex > 0 && socket.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        try
+                        {
+                            int netOrder = IPAddress.HostToNetworkOrder(InterfaceIndex);
+                            socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)31, netOrder);
+                        }
+                        catch { }
+                    }
                 }
             }
             catch { }

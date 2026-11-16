@@ -35,7 +35,7 @@ namespace VibeDesk.Network.P2P
             }
         }
 
-        public static async Task<(IPEndPoint? EndPoint, bool IsSymmetric, string Message)> ProbeAsync(int localPort, string localIp = "")
+        public static async Task<(IPEndPoint? EndPoint, bool IsSymmetric, string Message)> ProbeAsync(int localPort, string localIp = "", int ifIndex = -1)
         {
             IPAddress bindAddr = IPAddress.Any;
             if (!string.IsNullOrEmpty(localIp) && IPAddress.TryParse(localIp, out var parsedIp))
@@ -47,6 +47,18 @@ namespace VibeDesk.Network.P2P
             {
                 using var probe = new UdpClient();
                 probe.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+
+                // Bind to physical network adapter index to bypass VPN routing table
+                if (ifIndex > 0 && probe.Client.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    try
+                    {
+                        int netOrder = IPAddress.HostToNetworkOrder(ifIndex);
+                        probe.Client.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)31, netOrder);
+                    }
+                    catch { }
+                }
+
                 if (localPort > 0 || !bindAddr.Equals(IPAddress.Any))
                 {
                     try
@@ -118,34 +130,53 @@ namespace VibeDesk.Network.P2P
             return null;
         }
 
-        public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0, string localIp = "")
+        public static async Task<(IPEndPoint? EndPoint, string Message)> ResolveAsync(int localPort = 0, string localIp = "", int ifIndex = -1)
         {
-            var (ep, _, msg) = await ProbeAsync(localPort, localIp);
+            var (ep, _, msg) = await ProbeAsync(localPort, localIp, ifIndex);
             return (ep, msg);
         }
 
         public static async Task SendStunQueriesViaNetManagerAsync(LiteNetLib.NetManager netManager)
         {
             if (netManager == null || !netManager.IsRunning) return;
+            await Task.Yield();
             byte[] req = CreateBindingRequest();
 
-            try
+            // 1. Direct IPs of known STUN servers (instant, bypasses DNS resolution and DNS hijacking/filtering by VPN)
+            var directIps = new[]
             {
-                var cf = await Dns.GetHostAddressesAsync("stun.cloudflare.com");
-                var cfIp = System.Linq.Enumerable.FirstOrDefault(cf, a => a.AddressFamily == AddressFamily.InterNetwork);
-                if (cfIp != null)
-                    netManager.SendUnconnectedMessage(req, new IPEndPoint(cfIp, 3478));
-            }
-            catch { }
+                new IPEndPoint(IPAddress.Parse("162.159.207.0"), 3478),   // stun.cloudflare.com
+                new IPEndPoint(IPAddress.Parse("162.159.192.1"), 3478),   // stun.cloudflare.com
+                new IPEndPoint(IPAddress.Parse("142.250.150.127"), 19302), // stun.l.google.com
+                new IPEndPoint(IPAddress.Parse("74.125.250.129"), 19302)   // stun1.l.google.com
+            };
 
-            try
+            foreach (var ep in directIps)
             {
-                var gg = await Dns.GetHostAddressesAsync("stun.l.google.com");
-                var ggIp = System.Linq.Enumerable.FirstOrDefault(gg, a => a.AddressFamily == AddressFamily.InterNetwork);
-                if (ggIp != null)
-                    netManager.SendUnconnectedMessage(req, new IPEndPoint(ggIp, 19302));
+                try { netManager.SendUnconnectedMessage(req, ep); } catch { }
             }
-            catch { }
+
+            // 2. Also send by DNS hostname in background for resiliency
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var cf = await Dns.GetHostAddressesAsync("stun.cloudflare.com");
+                    var cfIp = System.Linq.Enumerable.FirstOrDefault(cf, a => a.AddressFamily == AddressFamily.InterNetwork);
+                    if (cfIp != null)
+                        netManager.SendUnconnectedMessage(req, new IPEndPoint(cfIp, 3478));
+                }
+                catch { }
+
+                try
+                {
+                    var gg = await Dns.GetHostAddressesAsync("stun.l.google.com");
+                    var ggIp = System.Linq.Enumerable.FirstOrDefault(gg, a => a.AddressFamily == AddressFamily.InterNetwork);
+                    if (ggIp != null)
+                        netManager.SendUnconnectedMessage(req, new IPEndPoint(ggIp, 19302));
+                }
+                catch { }
+            });
         }
 
         public static byte[] CreateBindingRequest()
