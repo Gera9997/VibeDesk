@@ -230,8 +230,25 @@ namespace VibeDesk
             // 5. Фоновый периодический рефреш внешнего адреса (каждые 45 сек)
             _ = StartPeriodicStunRefreshAsync();
 
-            // 6. Фоновая проверка обновлений
+            // 6. Фоновая проверка обновлений (при старте и каждые 10 минут)
             _ = CheckForUpdatesQuietlyAsync();
+            _ = StartPeriodicUpdateCheckAsync();
+        }
+
+        private async Task StartPeriodicUpdateCheckAsync()
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromMinutes(10));
+                try
+                {
+                    if (!_host.HasClient)
+                    {
+                        await CheckForUpdatesQuietlyAsync();
+                    }
+                }
+                catch { }
+            }
         }
 
         /// <summary>
