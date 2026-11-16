@@ -226,8 +226,51 @@ namespace VibeDesk
             // 4. Регистрируемся в глобальном сигналинге
             _ = InitializeSignalingAsync();
 
-            // 5. Фоновая проверка обновлений
+            // 5. Фоновый периодический рефреш внешнего адреса (каждые 45 сек)
+            _ = StartPeriodicStunRefreshAsync();
+
+            // 6. Фоновая проверка обновлений
             _ = CheckForUpdatesQuietlyAsync();
+        }
+
+        /// <summary>
+        /// Периодически (каждые 45 сек) обновляет внешний IP/порт через STUN-запрос по активному сокету хоста.
+        /// Если IP/порт изменился (ротация CGNAT, VPN вкл/выкл, смена сети) — обновляет _physicalPublicEndPoint.
+        /// </summary>
+        private async Task StartPeriodicStunRefreshAsync()
+        {
+            while (true)
+            {
+                await Task.Delay(45_000);
+                try
+                {
+                    if (_host.HasClient) continue; // не мешаем активному сеансу
+
+                    var freshEp = await _host.QueryStunOverActiveSocketAsync(timeoutMs: 1500);
+                    if (freshEp != null)
+                    {
+                        bool changed = _physicalPublicEndPoint == null ||
+                            !freshEp.Address.Equals(_physicalPublicEndPoint.Address) ||
+                            freshEp.Port != _physicalPublicEndPoint.Port;
+
+                        _physicalPublicEndPoint = freshEp;
+                        _myPublicEndPoint = freshEp;
+
+                        if (changed)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                TxtPublicEndpoint.Text = $"{freshEp.Address}:{freshEp.Port}";
+                                AppendLog($"🔄 Внешний адрес обновлён: {freshEp.Address}:{freshEp.Port}");
+                            });
+                        }
+                    }
+
+                    // Проверяем, не сменился ли LAN IP (другая сеть, VPN вкл/выкл)
+                    Dispatcher.Invoke(() => FindRealLocalIp());
+                }
+                catch { }
+            }
         }
 
         private void MainWindow_Closed(object? sender, EventArgs e)
@@ -509,33 +552,59 @@ namespace VibeDesk
 
                 _ = Dispatcher.InvokeAsync(() => AppendLog($"🥊 [Хост] Запущен непрерывный встречный UDP-punch по адресам клиента ({punchTargets.Count} эндпоинтов)..."));
 
-                var bestPubEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
-                string pubIpStr = bestPubEp?.Address.ToString() ?? "";
-                int pubPort = bestPubEp?.Port ?? _host.Port;
-
-                if (string.IsNullOrEmpty(pubIpStr))
+                // ★ Фаза 2: Свежий STUN через активный сокет хоста — узнаём АКТУАЛЬНЫЙ внешний IP:порт
+                var freshStunEp = await _host.QueryStunOverActiveSocketAsync(timeoutMs: 1200);
+                if (freshStunEp != null)
                 {
-                    try
+                    _physicalPublicEndPoint = freshStunEp;
+                    _myPublicEndPoint = freshStunEp;
+                    _ = Dispatcher.InvokeAsync(() =>
                     {
-                        var httpIp = await StunResolver.GetPublicIpHttpAsync(2000);
-                        if (httpIp != null)
-                        {
-                            pubIpStr = httpIp.ToString();
-                        }
-                    }
-                    catch { }
+                        TxtPublicEndpoint.Text = $"{freshStunEp.Address}:{freshStunEp.Port}";
+                    });
                 }
 
+                // Обновляем локальный IP на случай смены сети
+                Dispatcher.Invoke(() => FindRealLocalIp());
+
+                // ★ Фаза 4: Определяем STUN-адрес (через сокет) и HTTP-адрес (через веб) для VPN-детекции
+                string stunIpStr = freshStunEp?.Address.ToString() ?? (_physicalPublicEndPoint?.Address.ToString() ?? "");
+                int stunPort = freshStunEp?.Port ?? (_physicalPublicEndPoint?.Port ?? _host.Port);
+
+                // HTTP IP может отличаться от STUN если трафик идёт через VPN/прокси
+                string httpIpStr = "";
+                try
+                {
+                    var httpIp = await StunResolver.GetPublicIpHttpAsync(2000);
+                    if (httpIp != null)
+                    {
+                        httpIpStr = httpIp.ToString();
+                    }
+                }
+                catch { }
+
+                // Если оба пустые — полный офлайн
+                string bestPhysIp = !string.IsNullOrEmpty(stunIpStr) ? stunIpStr : httpIpStr;
+                int bestPhysPort = stunPort > 0 ? stunPort : _host.Port;
+
+                // PublicIp = HTTP IP (может быть реальный или VPN), PhysicalPublicIp = STUN IP (через сокет)
+                // Клиент попробует оба варианта
                 var responseInfo = new PeerEndpointInfo
                 {
                     DeviceId = _myDeviceId,
-                    PublicIp = pubIpStr,
-                    PublicPort = pubPort > 0 ? pubPort : _host.Port,
-                    PhysicalPublicIp = pubIpStr,
-                    PhysicalPublicPort = pubPort > 0 ? pubPort : _host.Port,
+                    PublicIp = !string.IsNullOrEmpty(httpIpStr) ? httpIpStr : bestPhysIp,
+                    PublicPort = !string.IsNullOrEmpty(httpIpStr) && httpIpStr != bestPhysIp ? _host.Port : bestPhysPort,
+                    PhysicalPublicIp = bestPhysIp,
+                    PhysicalPublicPort = bestPhysPort,
                     LocalIp = _myLocalIp,
                     LocalPort = _host.Port
                 };
+
+                // Логируем если обнаружен VPN (HTTP IP отличается от STUN IP)
+                if (!string.IsNullOrEmpty(httpIpStr) && !string.IsNullOrEmpty(stunIpStr) && httpIpStr != stunIpStr)
+                {
+                    _ = Dispatcher.InvokeAsync(() => AppendLog($"⚠️ [VPN] Обнаружен VPN/прокси: STUN={stunIpStr}, HTTP={httpIpStr}. Передаём оба адреса клиенту."));
+                }
 
                 return responseInfo;
             });

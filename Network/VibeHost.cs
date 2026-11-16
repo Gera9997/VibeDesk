@@ -323,9 +323,9 @@ namespace VibeDesk.Network
         {
             var stopwatch = new Stopwatch();
             var fpsStopwatch = Stopwatch.StartNew();
+            var keepaliveSw = Stopwatch.StartNew();
             int framesThisSecond = 0;
             long bytesSentThisSecond = 0;
-            long lastKeepaliveMs = 0;
 
             long maxBytesPerSec = (_maxBitrateKbps * 1024L) / 8L;
             double tokenBucket = maxBytesPerSec * 0.15; // burst-окно 150 мс
@@ -357,10 +357,12 @@ namespace VibeDesk.Network
                     lastTokenTicks = tokenNow;
                     tokenBucket = Math.Min(maxBurst, tokenBucket + (elapsedSec * maxBytesPerSec));
 
-                    // NAT Keepalive: каждые 15 секунд отправляем реальный STUN-запрос, чтобы роутер держал внешний порт открытым!
-                    if (_connectedPeer == null && fpsStopwatch.ElapsedMilliseconds - lastKeepaliveMs >= 15000)
+                    // NAT Keepalive: каждые 10 секунд отправляем STUN-запрос через активный сокет,
+                    // чтобы роутер держал внешний UDP-порт открытым и обновлялся DiscoveredStunEndPoint.
+                    // Используем отдельный Stopwatch, т.к. fpsStopwatch сбрасывается каждую секунду!
+                    if (_connectedPeer == null && keepaliveSw.ElapsedMilliseconds >= 10_000)
                     {
-                        lastKeepaliveMs = fpsStopwatch.ElapsedMilliseconds;
+                        keepaliveSw.Restart();
                         _ = VibeDesk.Network.P2P.StunResolver.SendStunQueriesViaNetManagerAsync(_netServer);
                     }
 
