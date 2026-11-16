@@ -24,6 +24,10 @@ namespace VibeDesk.Capture
         private Bitmap? _workBitmap;
         private Graphics? _workGraphics;
 
+        private Bitmap? _workBitmapV2;
+        private readonly MemoryStream _compressionStreamV2 = new(1024 * 512);
+        public FullFrameTelemetry LastFullFrameV2Telemetry { get; private set; }
+
         private readonly StripeDirtyAndRefinementTracker _tracker = new(StripCount);
         private int _forceSweepIndex = 0;
         private volatile int _currentQuality = 60;
@@ -114,8 +118,10 @@ namespace VibeDesk.Capture
 
                 _workBitmap?.Dispose();
                 _workGraphics?.Dispose();
+                _workBitmapV2?.Dispose();
                 _workBitmap = null;
                 _workGraphics = null;
+                _workBitmapV2 = null;
 
                 _tracker.Reset();
                 _forceSweepIndex = 0;
@@ -407,6 +413,219 @@ namespace VibeDesk.Capture
             }
         }
 
+        public static unsafe void FastBilinearScaleRgb32(
+            byte* srcBase, int srcW, int srcH, int srcStride,
+            byte* dstBase, int dstW, int dstH, int dstStride)
+        {
+            if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) return;
+
+            int[] xByte0 = new int[dstW];
+            int[] xByte1 = new int[dstW];
+            int[] xFrac = new int[dstW];
+            int[] xInv = new int[dstW];
+
+            float scaleX = (float)srcW / dstW;
+            for (int x = 0; x < dstW; x++)
+            {
+                float srcX = (x + 0.5f) * scaleX - 0.5f;
+                int x0 = (int)MathF.Floor(srcX);
+                int x1 = x0 + 1;
+                float frac = srcX - x0;
+
+                x0 = Math.Clamp(x0, 0, srcW - 1);
+                x1 = Math.Clamp(x1, 0, srcW - 1);
+
+                xByte0[x] = x0 * 4;
+                xByte1[x] = x1 * 4;
+                int fx = (int)(frac * 256.0f);
+                xFrac[x] = fx;
+                xInv[x] = 256 - fx;
+            }
+
+            float scaleY = (float)srcH / dstH;
+
+            Parallel.For(0, dstH, y =>
+            {
+                float srcY = (y + 0.5f) * scaleY - 0.5f;
+                int y0 = (int)MathF.Floor(srcY);
+                int y1 = y0 + 1;
+                int fracY = (int)((srcY - y0) * 256.0f);
+
+                y0 = Math.Clamp(y0, 0, srcH - 1);
+                y1 = Math.Clamp(y1, 0, srcH - 1);
+
+                byte* row0 = srcBase + y0 * srcStride;
+                byte* row1 = srcBase + y1 * srcStride;
+                byte* dstRow = dstBase + y * dstStride;
+
+                int invY = 256 - fracY;
+
+                for (int x = 0; x < dstW; x++)
+                {
+                    int b0 = xByte0[x];
+                    int b1 = xByte1[x];
+                    int fx = xFrac[x];
+                    int invX = xInv[x];
+
+                    int w00 = invX * invY;
+                    int w10 = fx * invY;
+                    int w01 = invX * fracY;
+                    int w11 = fx * fracY;
+
+                    int dstX = x * 4;
+
+                    // Blue
+                    dstRow[dstX + 0] = (byte)((row0[b0 + 0] * w00 + row0[b1 + 0] * w10 + row1[b0 + 0] * w01 + row1[b1 + 0] * w11 + 32768) >> 16);
+                    // Green
+                    dstRow[dstX + 1] = (byte)((row0[b0 + 1] * w00 + row0[b1 + 1] * w10 + row1[b0 + 1] * w01 + row1[b1 + 1] * w11 + 32768) >> 16);
+                    // Red
+                    dstRow[dstX + 2] = (byte)((row0[b0 + 2] * w00 + row0[b1 + 2] * w10 + row1[b0 + 2] * w01 + row1[b1 + 2] * w11 + 32768) >> 16);
+                    // Alpha/Reserved
+                    dstRow[dstX + 3] = 255;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Копия полнокадрового видеорежима (V2) с высокопроизводительным многопоточным SIMD-ресайзом
+        /// и раздельным буферизованным сжатием. Исходный CaptureFullFrame (V1) остается неизменным.
+        /// </summary>
+        public unsafe byte[]? CaptureFullFrameV2(bool forceFrame = false, bool includeTelemetry = false, uint frameId = 0, int qualityOverride = -1)
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            Bitmap? bmp = _capturer.Capture();
+            if (bmp == null)
+            {
+                if (_capturer is DxgiScreenCapture)
+                {
+                    _capturer.Dispose();
+                    var gdi = new GdiScreenCapture();
+                    gdi.Initialize();
+                    _capturer = gdi;
+                    bmp = _capturer.Capture();
+                }
+                if (bmp == null) return null;
+            }
+
+            if (!forceFrame && !_capturer.HasNewFrame)
+            {
+                return null;
+            }
+
+            long t1 = Stopwatch.GetTimestamp();
+            double captureMs = (t1 - t0) * 1000.0 / Stopwatch.Frequency;
+
+            int targetW = Math.Max(16, ((int)(bmp.Width * ResolutionScale)) / 2 * 2);
+            int targetH = Math.Max(16, ((int)(bmp.Height * ResolutionScale)) / 2 * 2);
+
+            Bitmap sourceBmp;
+            if (Math.Abs(ResolutionScale - 1.0f) < 0.01f && bmp.Width == targetW && bmp.Height == targetH)
+            {
+                sourceBmp = bmp;
+            }
+            else
+            {
+                if (_workBitmapV2 == null || _workBitmapV2.Width != targetW || _workBitmapV2.Height != targetH)
+                {
+                    _workBitmapV2?.Dispose();
+                    _workBitmapV2 = new Bitmap(targetW, targetH, PixelFormat.Format32bppRgb);
+                }
+
+                BitmapData srcData = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+                BitmapData dstData = _workBitmapV2.LockBits(new Rectangle(0, 0, targetW, targetH), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+
+                try
+                {
+                    FastBilinearScaleRgb32(
+                        (byte*)srcData.Scan0, bmp.Width, bmp.Height, srcData.Stride,
+                        (byte*)dstData.Scan0, targetW, targetH, dstData.Stride);
+                }
+                finally
+                {
+                    bmp.UnlockBits(srcData);
+                    _workBitmapV2.UnlockBits(dstData);
+                }
+
+                sourceBmp = _workBitmapV2;
+            }
+
+            long t2 = Stopwatch.GetTimestamp();
+            double scaleMs = (t2 - t1) * 1000.0 / Stopwatch.Frequency;
+
+            EncoderParameters encParams = _encoderParams;
+            bool customEnc = false;
+            if (qualityOverride >= 10 && qualityOverride <= 100 && qualityOverride != _currentQuality)
+            {
+                encParams = new EncoderParameters(1);
+                encParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)qualityOverride);
+                customEnc = true;
+            }
+
+            try
+            {
+                lock (_compressionStreamV2)
+                {
+                    _compressionStreamV2.SetLength(0);
+
+                    if (includeTelemetry)
+                    {
+                        // Префикс полного кадра с телеметрией v2 (0xAA 0x03):
+                        // [0] = 0xAA (FullFrame marker)
+                        // [1] = 0x03 (v2 stream mode marker)
+                        // [2..5] = FrameId (uint32)
+                        // [6..9] = CaptureMs (float)
+                        // [10..13] = ScaleMs (float)
+                        // [14..17] = EncodeMs (float placeholder)
+                        // [18..25] = HostTimestampTicks (int64 placeholder)
+                        // [26..] = JPEG stream
+
+                        byte[] header = new byte[26];
+                        header[0] = 0xAA;
+                        header[1] = 0x03;
+                        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(2, 4), frameId);
+                        BinaryPrimitives.WriteSingleLittleEndian(header.AsSpan(6, 4), (float)captureMs);
+                        BinaryPrimitives.WriteSingleLittleEndian(header.AsSpan(10, 4), (float)scaleMs);
+                        _compressionStreamV2.Write(header, 0, 26);
+
+                        long tEncodeStart = Stopwatch.GetTimestamp();
+                        sourceBmp.Save(_compressionStreamV2, _jpegCodec, encParams);
+                        long tEncodeEnd = Stopwatch.GetTimestamp();
+                        double encodeMs = (tEncodeEnd - tEncodeStart) * 1000.0 / Stopwatch.Frequency;
+
+                        long hostTicks = Stopwatch.GetTimestamp();
+                        byte[] streamBuffer = _compressionStreamV2.GetBuffer();
+                        BinaryPrimitives.WriteSingleLittleEndian(streamBuffer.AsSpan(14, 4), (float)encodeMs);
+                        BinaryPrimitives.WriteInt64LittleEndian(streamBuffer.AsSpan(18, 8), hostTicks);
+
+                        byte[] result = _compressionStreamV2.ToArray();
+                        LastFullFrameV2Telemetry = new FullFrameTelemetry(captureMs, scaleMs, encodeMs, result.Length, targetW, targetH);
+                        return result;
+                    }
+                    else
+                    {
+                        _compressionStreamV2.WriteByte(0xAA);
+                        _compressionStreamV2.WriteByte(0x03);
+
+                        long tEncodeStart = Stopwatch.GetTimestamp();
+                        sourceBmp.Save(_compressionStreamV2, _jpegCodec, encParams);
+                        long tEncodeEnd = Stopwatch.GetTimestamp();
+                        double encodeMs = (tEncodeEnd - tEncodeStart) * 1000.0 / Stopwatch.Frequency;
+
+                        byte[] result = _compressionStreamV2.ToArray();
+                        LastFullFrameV2Telemetry = new FullFrameTelemetry(captureMs, scaleMs, encodeMs, result.Length, targetW, targetH);
+                        return result;
+                    }
+                }
+            }
+            finally
+            {
+                if (customEnc)
+                {
+                    encParams.Dispose();
+                }
+            }
+        }
+
         public byte[]? CaptureAndEncode(bool forceFrame = false)
         {
             Bitmap? bmp = _capturer.Capture();
@@ -452,9 +671,11 @@ namespace VibeDesk.Capture
         {
             _workGraphics?.Dispose();
             _workBitmap?.Dispose();
+            _workBitmapV2?.Dispose();
             _capturer.Dispose();
             _encoderParams.Dispose();
             _compressionStream.Dispose();
+            _compressionStreamV2.Dispose();
             for (int i = 0; i < StripCount; i++)
             {
                 _stripStreams[i]?.Dispose();

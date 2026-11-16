@@ -117,6 +117,28 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
+        public void TestStreamModePacketSerializationAndFullFrameCaptureV2()
+        {
+            byte mode = 2;
+            byte[] packet = PacketBuilder.CreateStreamMode(mode);
+            Assert.IsNotNull(packet);
+            Assert.AreEqual(2, packet.Length);
+            Assert.AreEqual((byte)PacketType.StreamMode, packet[0]);
+            Assert.AreEqual(mode, packet[1]);
+
+            using var manager = new ScreenCaptureManager(jpegQuality: 50, scale: 0.5f);
+            var fullFrameV2 = manager.CaptureFullFrameV2(forceFrame: true, includeTelemetry: true, frameId: 42);
+            if (fullFrameV2 != null)
+            {
+                Assert.IsTrue(fullFrameV2.Length > 26);
+                Assert.AreEqual((byte)0xAA, fullFrameV2[0], "FullFrame magic marker byte 0");
+                Assert.AreEqual((byte)0x03, fullFrameV2[1], "FullFrame v2 marker byte 1");
+                Assert.AreEqual((byte)0xFF, fullFrameV2[26], "JPEG SOI marker 1");
+                Assert.AreEqual((byte)0xD8, fullFrameV2[27], "JPEG SOI marker 2");
+            }
+        }
+
+        [TestMethod]
         public void TestFrameReassemblerMultiSlotIntegrity()
         {
             var reassembler = new FrameReassembler();

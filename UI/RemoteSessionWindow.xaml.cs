@@ -42,7 +42,7 @@ namespace VibeDesk.UI
         // Хранит только самый последний полученный пакет для каждой из 8 полос
         private readonly byte[]?[] _latestStripBytes = new byte[]?[ScreenCaptureManager.StripCount];
         private byte[]? _latestFullFrameBytes = null;
-        private byte _currentStreamMode = 0; // 0 = TurboMjpeg (полосы), 1 = VideoStream (full frame)
+        private byte _currentStreamMode = 0; // 0 = TurboMjpeg (полосы), 1 = VideoStream (full frame), 2 = VideoStream v2 (optimized)
         private readonly AutoResetEvent _frameSignal = new AutoResetEvent(false);
         private readonly Thread? _renderThread;
         private volatile bool _renderRunning = true;
@@ -66,6 +66,7 @@ namespace VibeDesk.UI
             public double DecodeMs;
             public long QueueTimestampTicks;
             public int PayloadSizeBytes;
+            public byte Version;
         }
 
         private readonly List<string> _perfLogEntries = new(300);
@@ -272,9 +273,9 @@ namespace VibeDesk.UI
                 Interlocked.Exchange(ref _latestStripBytes[stripIdx], payload);
                 _frameSignal.Set();
             }
-            else if (payload[0] == 0xAA && (payload[1] == 0x01 || payload[1] == 0x02))
+            else if (payload[0] == 0xAA && (payload[1] == 0x01 || payload[1] == 0x02 || payload[1] == 0x03))
             {
-                // Полнокадровый видеопоток (Full Frame mode, v1 или v2 с телеметрией)
+                // Полнокадровый видеопоток (Full Frame mode, v1, v2 или v2-opt с телеметрией)
                 Interlocked.Exchange(ref _latestFullFrameBytes, payload);
                 _frameSignal.Set();
             }
@@ -302,9 +303,11 @@ namespace VibeDesk.UI
                         float hostCapMs = 0;
                         float hostScaleMs = 0;
                         float hostEncodeMs = 0;
+                        byte streamVer = 1;
 
-                        if (fullFramePayload.Length >= 26 && fullFramePayload[0] == 0xAA && fullFramePayload[1] == 0x02)
+                        if (fullFramePayload.Length >= 26 && fullFramePayload[0] == 0xAA && (fullFramePayload[1] == 0x02 || fullFramePayload[1] == 0x03))
                         {
+                            streamVer = fullFramePayload[1] == 0x03 ? (byte)2 : (byte)1;
                             jpegOffset = 26;
                             frameId = BinaryPrimitives.ReadUInt32LittleEndian(fullFramePayload.AsSpan(2, 4));
                             hostCapMs = BinaryPrimitives.ReadSingleLittleEndian(fullFramePayload.AsSpan(6, 4));
@@ -359,7 +362,8 @@ namespace VibeDesk.UI
                             HostEncodeMs = hostEncodeMs,
                             DecodeMs = decodeMs,
                             QueueTimestampTicks = Stopwatch.GetTimestamp(),
-                            PayloadSizeBytes = fullFramePayload.Length
+                            PayloadSizeBytes = fullFramePayload.Length,
+                            Version = streamVer
                         });
                         decodedAny = true;
                     }
@@ -521,7 +525,8 @@ namespace VibeDesk.UI
             _avgRenderMs = (1 - alpha) * _avgRenderMs + alpha * renderMs;
             _avgTotalMs = (1 - alpha) * _avgTotalMs + alpha * totalPipelineMs;
 
-            string line = $"{DateTime.Now:HH:mm:ss.fff} [Кадр #{strip.FrameId}] Захват: {strip.HostCapMs:F1}мс | Ресайз: {strip.HostScaleMs:F1}мс | JPEG: {strip.HostEncodeMs:F1}мс | Очередь: {queueMs:F1}мс | Декод: {strip.DecodeMs:F1}мс | UI: {renderMs:F1}мс | Всего: {totalPipelineMs:F1}мс | {strip.PayloadSizeBytes / 1024.0:F1} КБ";
+            string verTag = strip.Version == 2 ? " (v2)" : "";
+            string line = $"{DateTime.Now:HH:mm:ss.fff} [Кадр #{strip.FrameId}{verTag}] Захват: {strip.HostCapMs:F1}мс | Ресайз: {strip.HostScaleMs:F1}мс | JPEG: {strip.HostEncodeMs:F1}мс | Очередь: {queueMs:F1}мс | Декод: {strip.DecodeMs:F1}мс | UI: {renderMs:F1}мс | Всего: {totalPipelineMs:F1}мс | {strip.PayloadSizeBytes / 1024.0:F1} КБ";
 
             lock (_perfLogLock)
             {
@@ -536,8 +541,9 @@ namespace VibeDesk.UI
 
             if (DrawerPerfLogs.Visibility == Visibility.Visible)
             {
+                string modeName = strip.Version == 2 ? "🚀 Видеопоток v2 (Оптимизированный)" : "🎬 Видеопоток";
                 TxtLiveSummary.Text =
-                    $"Кадр: #{strip.FrameId} ({strip.Width}x{strip.Height}, {strip.PayloadSizeBytes / 1024.0:F1} КБ)\n" +
+                    $"[{modeName}] Кадр: #{strip.FrameId} ({strip.Width}x{strip.Height}, {strip.PayloadSizeBytes / 1024.0:F1} КБ)\n" +
                     $"• Захват + Сжатие (Хост): {totalHostMs:F1} мс (Захват: {strip.HostCapMs:F1}мс, Ресайз: {strip.HostScaleMs:F1}мс, JPEG: {strip.HostEncodeMs:F1}мс)\n" +
                     $"• Очередь кадра:          {queueMs:F1} мс\n" +
                     $"• Декодирование (Клиент):  {strip.DecodeMs:F1} мс\n" +
@@ -567,8 +573,9 @@ namespace VibeDesk.UI
 
         private string GenerateFormattedPerfLog()
         {
+            string modeTitle = _currentStreamMode == 2 ? "VideoStream V2 (Optimized)" : "VideoStream";
             return $"====================================================================================\n" +
-                   $" VibeDesk VideoStream Performance Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+                   $" VibeDesk {modeTitle} Performance Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
                    $"====================================================================================\n" +
                    $"Сводная статистика за сессию:\n" +
                    $"• Захват экрана на Хосте (DXGI/GDI): {_avgCapMs:F2} мс\n" +
@@ -628,11 +635,12 @@ namespace VibeDesk.UI
                 content = GenerateFormattedPerfLog();
             }
 
+            string filePrefix = _currentStreamMode == 2 ? "VibeDesk_VideoStreamV2_" : "VibeDesk_VideoStream_";
             var saveDlg = new Microsoft.Win32.SaveFileDialog
             {
                 Title = "Экспорт лога таймингов видеопотока",
                 Filter = "Текстовые файлы (*.txt)|*.txt|Все файлы (*.*)|*.*",
-                FileName = $"VibeDesk_VideoStream_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                FileName = $"{filePrefix}{DateTime.Now:yyyyMMdd_HHmmss}.txt",
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
             };
 

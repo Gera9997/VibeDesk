@@ -35,7 +35,8 @@ namespace VibeDesk.Network
         private volatile int _maxBitrateKbps = 15000;
         private volatile int _configuredQuality = 60;
         private int _adaptiveVideoStreamQuality = 60;
-        private volatile byte _streamMode = 0; // 0 = TurboMjpeg (strips), 1 = VideoStream (full frame)
+        private int _adaptiveVideoStreamQualityV2 = 60;
+        private volatile byte _streamMode = 0; // 0 = TurboMjpeg (strips), 1 = VideoStream (full frame), 2 = VideoStream v2 (optimized)
         private uint _frameCounter = 0;
         private volatile uint _lastClientAckedFrameId = 0;
         private uint _lastSentFrameId = 0;
@@ -218,6 +219,7 @@ namespace VibeDesk.Network
             _targetFps = Math.Clamp(targetFps, 15, 120);
             _configuredQuality = Math.Clamp(quality, 10, 100);
             _adaptiveVideoStreamQuality = _configuredQuality;
+            _adaptiveVideoStreamQualityV2 = _configuredQuality;
             if (maxBitrateKbps > 0)
             {
                 _maxBitrateKbps = Math.Clamp(maxBitrateKbps, 500, 50000);
@@ -459,9 +461,9 @@ namespace VibeDesk.Network
                                     framesThisSecond++;
                                 }
                             }
-                            else
+                            else if (_streamMode == 1)
                             {
-                                // Целевой бюджет одного кадра в байтах для удержания FPS
+                                // Режим 1: Текущий видеопоток (Full Frame v1) - сохраняем нетронутым!
                                 long targetBytesPerFrame = Math.Max(16384, (long)((_maxBitrateKbps * 1024L / 8.0) / Math.Max(1, _targetFps)));
 
                                 uint nextFrameId = unchecked(_frameCounter + 1);
@@ -480,14 +482,65 @@ namespace VibeDesk.Network
                                     // Адаптивное управление качеством под бюджет пропускной способности:
                                     if (fullFrame.Length > targetBytesPerFrame * 1.25 || tokenBucket < 0)
                                     {
-                                        // Кадр слишком велик для канала: снижаем качество для удержания плавного FPS
                                         int step = (fullFrame.Length > targetBytesPerFrame * 2.0) ? 5 : 2;
                                         _adaptiveVideoStreamQuality = Math.Max(20, _adaptiveVideoStreamQuality - step);
                                     }
                                     else if (fullFrame.Length < targetBytesPerFrame * 0.85 && tokenBucket > targetBytesPerFrame * 0.5)
                                     {
-                                        // Есть запас пропускной способности: плавно возвращаем четкость
                                         _adaptiveVideoStreamQuality = Math.Min(_configuredQuality, _adaptiveVideoStreamQuality + 1);
+                                    }
+
+                                    int totalLength = fullFrame.Length;
+                                    int chunkSize = PacketBuilder.MaxChunkPayloadSize;
+                                    ushort totalChunks = (ushort)Math.Ceiling((double)totalLength / chunkSize);
+
+                                    for (ushort i = 0; i < totalChunks; i++)
+                                    {
+                                        int offset = i * chunkSize;
+                                        int length = Math.Min(chunkSize, totalLength - offset);
+                                        byte[] chunkPacket = PacketBuilder.CreateFrameChunk(_frameCounter, i, totalChunks, fullFrame, offset, length);
+
+                                        if (i > 0 && (i % 8) == 0)
+                                        {
+                                            Thread.SpinWait(200); // Микропауза каждые 8 чанков для защиты от переполнения сокета
+                                        }
+
+                                        peer.Send(chunkPacket, DeliveryMethod.Unreliable);
+                                        bytesSentThisSecond += chunkPacket.Length;
+                                        tokenBucket -= chunkPacket.Length;
+                                    }
+
+                                    _netServer.TriggerUpdate();
+                                    framesThisSecond++;
+                                }
+                            }
+                            else if (_streamMode == 2)
+                            {
+                                // Режим 2: Копия видеопотока (Full Frame v2) с высокопроизводительным ресайзом и оптимизациями
+                                long targetBytesPerFrame = Math.Max(16384, (long)((_maxBitrateKbps * 1024L / 8.0) / Math.Max(1, _targetFps)));
+
+                                uint nextFrameId = unchecked(_frameCounter + 1);
+                                var fullFrame = _captureManager.CaptureFullFrameV2(
+                                    forceFrame: forceKeyframe,
+                                    includeTelemetry: true,
+                                    frameId: nextFrameId,
+                                    qualityOverride: _adaptiveVideoStreamQualityV2);
+
+                                if (fullFrame != null && fullFrame.Length > 0)
+                                {
+                                    _frameCounter = nextFrameId;
+                                    _lastSentFrameId = _frameCounter;
+                                    _lastFrameSentTicks = nowTicks;
+
+                                    // Адаптивное управление качеством под бюджет пропускной способности (V2):
+                                    if (fullFrame.Length > targetBytesPerFrame * 1.25 || tokenBucket < 0)
+                                    {
+                                        int step = (fullFrame.Length > targetBytesPerFrame * 2.0) ? 5 : 2;
+                                        _adaptiveVideoStreamQualityV2 = Math.Max(20, _adaptiveVideoStreamQualityV2 - step);
+                                    }
+                                    else if (fullFrame.Length < targetBytesPerFrame * 0.85 && tokenBucket > targetBytesPerFrame * 0.5)
+                                    {
+                                        _adaptiveVideoStreamQualityV2 = Math.Min(_configuredQuality, _adaptiveVideoStreamQualityV2 + 1);
                                     }
 
                                     int totalLength = fullFrame.Length;
@@ -599,7 +652,14 @@ namespace VibeDesk.Network
                     if (reader.AvailableBytes >= 1)
                     {
                         _streamMode = reader.GetByte();
-                        OnStatusChanged?.Invoke($"[Режим стрима изменен] {(_streamMode == 0 ? "⚡ Турбо-MJPEG (Полосы)" : "🎬 Видеопоток (Full Frame)")}");
+                        string modeName = _streamMode switch
+                        {
+                            0 => "⚡ Турбо-MJPEG (Полосы)",
+                            1 => "🎬 Видеопоток (Full Frame v1)",
+                            2 => "🚀 Видеопоток v2 (Оптимизированный)",
+                            _ => $"Режим {_streamMode}"
+                        };
+                        OnStatusChanged?.Invoke($"[Режим стрима изменен] {modeName}");
                     }
                     break;
 

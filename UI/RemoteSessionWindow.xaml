@@ -54,9 +54,10 @@
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <TextBlock x:Name="LblCodec" Text="Кодек:" Foreground="#C2A878" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <ComboBox x:Name="CmbStreamCodec" Width="120" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="10" Margin="0,0,8,0">
+                    <ComboBox x:Name="CmbStreamCodec" Width="135" SelectedIndex="0" SelectionChanged="CmbStreamCodec_SelectionChanged" FontSize="10" Margin="0,0,8,0">
                         <ComboBoxItem Content="⚡ Турбо-MJPEG"/>
                         <ComboBoxItem Content="🎬 Видеопоток"/>
+                        <ComboBoxItem Content="🚀 Видеопоток v2"/>
                     </ComboBox>
 
                     <TextBlock Text="Масштаб:" Foreground="#7A7A90" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
