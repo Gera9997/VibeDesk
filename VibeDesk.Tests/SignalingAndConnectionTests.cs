@@ -49,6 +49,67 @@ namespace VibeDesk.Tests
         }
 
         [TestMethod]
+        public async Task TestP2PSignalingConcurrentAndSequentialRequests()
+        {
+            using var hostSignaling = new P2PSignaling();
+            using var clientSignaling = new P2PSignaling();
+
+            string testHostId = "888777";
+            var hostInfoExpected = new PeerEndpointInfo
+            {
+                DeviceId = testHostId,
+                LocalIp = "192.168.1.100",
+                LocalPort = 15890,
+                PublicIp = "9.8.7.6",
+                PublicPort = 15890
+            };
+
+            await hostSignaling.RegisterHostAsync(testHostId, clientReq =>
+            {
+                var resp = new PeerEndpointInfo
+                {
+                    DeviceId = hostInfoExpected.DeviceId,
+                    RequestId = clientReq.RequestId,
+                    LocalIp = hostInfoExpected.LocalIp,
+                    LocalPort = hostInfoExpected.LocalPort,
+                    PublicIp = hostInfoExpected.PublicIp,
+                    PublicPort = hostInfoExpected.PublicPort
+                };
+                return Task.FromResult(resp);
+            });
+
+            // 1. First probe request (like CheckRecentAvailabilityAsync)
+            var probeInfo = new PeerEndpointInfo
+            {
+                DeviceId = "333444",
+                LocalIp = "192.168.1.200",
+                LocalPort = 15891,
+                IsProbe = true
+            };
+
+            // 2. Immediate second request (like user clicking connect 100ms later)
+            var connectInfo = new PeerEndpointInfo
+            {
+                DeviceId = "333444",
+                LocalIp = "192.168.1.200",
+                LocalPort = 15891,
+                IsProbe = false
+            };
+
+            var probeTask = clientSignaling.RequestHostEndpointsAsync(testHostId, probeInfo, timeoutMs: 8000);
+            var connectTask = clientSignaling.RequestHostEndpointsAsync(testHostId, connectInfo, timeoutMs: 8000);
+
+            var results = await Task.WhenAll(probeTask, connectTask);
+
+            Assert.IsNotNull(results[0], "Probe request must receive host endpoints");
+            Assert.IsNotNull(results[1], "Connect request must receive host endpoints concurrently");
+            Assert.AreEqual(testHostId, results[0]!.DeviceId);
+            Assert.AreEqual(testHostId, results[1]!.DeviceId);
+            Assert.AreEqual(probeInfo.RequestId, results[0]!.RequestId);
+            Assert.AreEqual(connectInfo.RequestId, results[1]!.RequestId);
+        }
+
+        [TestMethod]
         public void TestStunPacketCreationAndParsing()
         {
             byte[] req = StunResolver.CreateBindingRequest();

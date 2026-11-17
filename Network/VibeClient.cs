@@ -312,8 +312,22 @@ namespace VibeDesk.Network
 
         public void Disconnect()
         {
+            if (_serverPeer != null)
+            {
+                try
+                {
+                    _serverPeer.Disconnect();
+                    // Flush disconnect packet over UDP to host immediately
+                    for (int i = 0; i < 5; i++)
+                    {
+                        _netClient.PollEvents();
+                        _netClient.TriggerUpdate();
+                        Thread.Sleep(15);
+                    }
+                }
+                catch { }
+            }
             _isRunning = false;
-            _serverPeer?.Disconnect();
             _pollThread?.Join(300);
             try
             {

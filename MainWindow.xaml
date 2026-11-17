@@ -1,7 +1,7 @@
 <Window x:Class="VibeDesk.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="VibeDesk" Height="640" Width="1020"
+        Title="VibeDesk" Height="660" Width="1040"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBg}"
         Foreground="{DynamicResource TextPrimary}"
@@ -11,69 +11,107 @@
 
     <Window.Resources>
         <!-- Dynamic Palette Brushes for Live Theme Switching -->
-        <SolidColorBrush x:Key="WindowBg" Color="#191716"/>
-        <SolidColorBrush x:Key="WindowTint" Color="#50191716"/>
-        <SolidColorBrush x:Key="HeaderBg" Color="#C0181312"/>
-        <SolidColorBrush x:Key="HeaderBorder" Color="#305C423E"/>
-        <SolidColorBrush x:Key="FooterBg" Color="#C0181312"/>
-        <SolidColorBrush x:Key="FooterBorder" Color="#305C423E"/>
-        <SolidColorBrush x:Key="GlassPanelBg" Color="#A61C1716"/>
-        <SolidColorBrush x:Key="GlassPanelBorder" Color="#405C423E"/>
-        <SolidColorBrush x:Key="AccentColor" Color="#C2A878"/>
-        <SolidColorBrush x:Key="PrimaryBtnBg" Color="#773344"/>
-        <SolidColorBrush x:Key="PrimaryBtnFg" Color="#C2A878"/>
-        <SolidColorBrush x:Key="SecondaryBtnBg" Color="#402D2220"/>
-        <SolidColorBrush x:Key="SecondaryBtnBorder" Color="#405C423E"/>
-        <SolidColorBrush x:Key="SecondaryBtnFg" Color="#C2A878"/>
-        <SolidColorBrush x:Key="ModernTextBoxBg" Color="#8014100F"/>
-        <SolidColorBrush x:Key="ModernTextBoxBorder" Color="#505C423E"/>
-        <SolidColorBrush x:Key="ModernTextBoxFg" Color="#F0EAE0"/>
-        <SolidColorBrush x:Key="LogBoxBg" Color="#500E0B0A"/>
-        <SolidColorBrush x:Key="LogBoxBorder" Color="#305C423E"/>
-        <SolidColorBrush x:Key="LogBoxFg" Color="#9C9286"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#F0EAE0"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#8A7F74"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#6E645A"/>
-        <SolidColorBrush x:Key="RecentItemBg" Color="#35201B19"/>
-        <SolidColorBrush x:Key="RecentItemBorder" Color="#255C423E"/>
-        <SolidColorBrush x:Key="ThumbnailBg" Color="#1A1413"/>
-        <SolidColorBrush x:Key="ThumbnailBorder" Color="#35C2A878"/>
-        <SolidColorBrush x:Key="ArrowBtnBg" Color="#25773344"/>
-        <SolidColorBrush x:Key="ArrowBtnBorder" Color="#40773344"/>
-        <SolidColorBrush x:Key="BadgeBg" Color="#352623"/>
-        <SolidColorBrush x:Key="BadgeBorder" Color="#505C423E"/>
+        <SolidColorBrush x:Key="WindowBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="WindowTint" Color="#00000000"/>
+        <SolidColorBrush x:Key="HeaderBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="HeaderBorder" Color="#73FFFFFF"/>
+        <SolidColorBrush x:Key="FooterBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="FooterBorder" Color="#73FFFFFF"/>
+        <SolidColorBrush x:Key="GlassPanelBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="GlassPanelBorder" Color="#73FFFFFF"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#080808"/>
+        <SolidColorBrush x:Key="PrimaryBtnBg" Color="#080808"/>
+        <SolidColorBrush x:Key="PrimaryBtnFg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="PrimaryBtnBorder" Color="#33FFFFFF"/>
+        <SolidColorBrush x:Key="PrimaryBtnHoverBg" Color="#222222"/>
+        <SolidColorBrush x:Key="PrimaryBtnHoverBorder" Color="#55FFFFFF"/>
+        <SolidColorBrush x:Key="PrimaryBtnPressedBg" Color="#111111"/>
+        <SolidColorBrush x:Key="PrimaryBtnPressedBorder" Color="#22FFFFFF"/>
+        <SolidColorBrush x:Key="SecondaryBtnBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="SecondaryBtnBorder" Color="#80FFFFFF"/>
+        <SolidColorBrush x:Key="SecondaryBtnFg" Color="#080808"/>
+        <SolidColorBrush x:Key="SecondaryBtnHoverBg" Color="#C8CCD1"/>
+        <SolidColorBrush x:Key="SecondaryBtnHoverBorder" Color="#B3FFFFFF"/>
+        <SolidColorBrush x:Key="SecondaryBtnPressedBg" Color="#B4B8BC"/>
+        <SolidColorBrush x:Key="SecondaryBtnPressedBorder" Color="#50FFFFFF"/>
+        <SolidColorBrush x:Key="ModernTextBoxBg" Color="#B8BCBF"/>
+        <SolidColorBrush x:Key="ModernTextBoxBorder" Color="#4DFFFFFF"/>
+        <SolidColorBrush x:Key="ModernTextBoxFg" Color="#080808"/>
+        <SolidColorBrush x:Key="LogBoxBg" Color="#B8BCBF"/>
+        <SolidColorBrush x:Key="LogBoxBorder" Color="#4DFFFFFF"/>
+        <SolidColorBrush x:Key="LogBoxFg" Color="#080808"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#080808"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#94080808"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#6B080808"/>
+        <SolidColorBrush x:Key="RecentItemBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="RecentItemBorder" Color="#73FFFFFF"/>
+        <SolidColorBrush x:Key="RecentItemHoverBg" Color="#C8CCD1"/>
+        <SolidColorBrush x:Key="RecentItemHoverBorder" Color="#B3FFFFFF"/>
+        <SolidColorBrush x:Key="ThumbnailBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="ThumbnailBorder" Color="#50FFFFFF"/>
+        <SolidColorBrush x:Key="ArrowBtnBg" Color="#BFC3C7"/>
+        <SolidColorBrush x:Key="ArrowBtnBorder" Color="#80FFFFFF"/>
+        <SolidColorBrush x:Key="ArrowBtnHoverBg" Color="#C8CCD1"/>
+        <SolidColorBrush x:Key="ArrowBtnHoverBorder" Color="#B3FFFFFF"/>
+        <SolidColorBrush x:Key="BadgeBg" Color="#B8BCBF"/>
+        <SolidColorBrush x:Key="BadgeBorder" Color="#66FFFFFF"/>
+        <SolidColorBrush x:Key="RecessedBg" Color="#B8BCBF"/>
+        <SolidColorBrush x:Key="InsetBevelBorder" Color="#4DFFFFFF"/>
 
-        <!-- Dynamic Gradient / Theme Placeholders for Neumorphism -->
-        <SolidColorBrush x:Key="PrimaryBtnBorder" Color="#70757C"/>
-        <SolidColorBrush x:Key="PrimaryBtnHoverBg" Color="#D2D6DC"/>
-        <SolidColorBrush x:Key="PrimaryBtnHoverBorder" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="PrimaryBtnPressedBg" Color="#9FA4AA"/>
-        <SolidColorBrush x:Key="PrimaryBtnPressedBorder" Color="#50545A"/>
-        <SolidColorBrush x:Key="SecondaryBtnHoverBg" Color="#282833"/>
-        <SolidColorBrush x:Key="SecondaryBtnHoverBorder" Color="#787896"/>
-        <SolidColorBrush x:Key="SecondaryBtnPressedBg" Color="#101015"/>
-        <SolidColorBrush x:Key="SecondaryBtnPressedBorder" Color="#383846"/>
-        <SolidColorBrush x:Key="RecentItemHoverBg" Color="#262632"/>
-        <SolidColorBrush x:Key="RecentItemHoverBorder" Color="#657080"/>
-        <SolidColorBrush x:Key="ArrowBtnHoverBg" Color="#404050"/>
-        <SolidColorBrush x:Key="ArrowBtnHoverBorder" Color="#787892"/>
+        <!-- Dynamic Neumorphic Physics Colors for Dual Drop Shadows -->
+        <Color x:Key="ShadowLightColor">#8CFFFFFF</Color>
+        <Color x:Key="ShadowDarkColor">#3D080808</Color>
+        <Color x:Key="BtnShadowLightColor">#99FFFFFF</Color>
+        <Color x:Key="BtnShadowDarkColor">#42080808</Color>
+        <Color x:Key="PrimaryLightColor">#80FFFFFF</Color>
+        <Color x:Key="PrimaryDarkColor">#59080808</Color>
+        <Color x:Key="InsetTopDarkColor">#47080808</Color>
+        <Color x:Key="InsetTopMidColor">#1F080808</Color>
+        <Color x:Key="InsetBotLightColor">#8CFFFFFF</Color>
+        <Color x:Key="RecentFadeStartColor">#00BFC3C7</Color>
+        <Color x:Key="RecentFadeMidColor">#A0BFC3C7</Color>
+        <Color x:Key="RecentFadeEndColor">#FFBFC3C7</Color>
 
-        <!-- Neumorphic Surface Panel (Soft raised tactile card) -->
-        <Style x:Key="GlassPanel" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource GlassPanelBg}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorder}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="20"/>
-            <Setter Property="Padding" Value="22"/>
-            <Setter Property="Margin" Value="8"/>
-            <Setter Property="Effect">
+        <!-- Convex Container / Section Panel: Extruded from solid silver sheet with dual shadows & bevel -->
+        <Style x:Key="GlassPanel" TargetType="ContentControl">
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
                 <Setter.Value>
-                    <DropShadowEffect BlurRadius="24" Direction="270" ShadowDepth="5" Color="#000000" Opacity="0.55" RenderingBias="Performance"/>
+                    <ControlTemplate TargetType="ContentControl">
+                        <Grid>
+                            <!-- Top-Left Light Highlight Shadow (-7px -7px 16px rgba(255,255,255,0.55)) -->
+                            <Border CornerRadius="22" Background="{DynamicResource GlassPanelBg}">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="135" ShadowDepth="7" BlurRadius="16"
+                                                      Color="{DynamicResource ShadowLightColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+                            <!-- Bottom-Right Dark Shadow (7px 7px 16px rgba(8,8,8,0.24)) -->
+                            <Border CornerRadius="22" Background="{DynamicResource GlassPanelBg}">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="315" ShadowDepth="7" BlurRadius="16"
+                                                      Color="{DynamicResource ShadowDarkColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+                            <!-- Top Surface with Micro-Bevel (1px solid rgba(255,255,255,0.45)) -->
+                            <Border Background="{DynamicResource GlassPanelBg}"
+                                    BorderBrush="{DynamicResource GlassPanelBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="22"
+                                    Padding="22">
+                                <ContentPresenter/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Primary Action Button (Convex tactile button with metallic bevel & soft shadow) -->
+        <!-- Primary Action Button: Hard inversion deep obsidian black #080808 with silver text & dual shadows -->
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource PrimaryBtnBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryBtnFg}"/>
@@ -86,15 +124,31 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <Border x:Name="BtnShadow"
+                        <Grid x:Name="PriRoot" RenderTransformOrigin="0.5,0.5">
+                            <!-- Top-Left Light Highlight (-4px -4px 10px rgba(255,255,255,0.5)) -->
+                            <Border x:Name="PriLightShadow"
                                     Background="{TemplateBinding Background}"
                                     CornerRadius="14">
                                 <Border.Effect>
-                                    <DropShadowEffect BlurRadius="14" Direction="270" ShadowDepth="4" Color="#000000" Opacity="0.55"/>
+                                    <DropShadowEffect Direction="135" ShadowDepth="4" BlurRadius="10"
+                                                      Color="{DynamicResource PrimaryLightColor}"
+                                                      RenderingBias="Performance"/>
                                 </Border.Effect>
                             </Border>
-                            <Border x:Name="BtnBorder"
+
+                            <!-- Bottom-Right Dark Shadow (5px 5px 12px rgba(8,8,8,0.35)) -->
+                            <Border x:Name="PriDarkShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="14">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="315" ShadowDepth="5" BlurRadius="12"
+                                                      Color="{DynamicResource PrimaryDarkColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Obsidian Black Button Surface -->
+                            <Border x:Name="PriBorder"
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
                                     BorderThickness="{TemplateBinding BorderThickness}"
@@ -103,20 +157,26 @@
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
+
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource PrimaryBtnHoverBg}"/>
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource PrimaryBtnHoverBorder}"/>
+                                <Setter TargetName="PriBorder" Property="Background" Value="{DynamicResource PrimaryBtnHoverBg}"/>
+                                <Setter TargetName="PriBorder" Property="BorderBrush" Value="{DynamicResource PrimaryBtnHoverBorder}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource PrimaryBtnPressedBg}"/>
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource PrimaryBtnPressedBorder}"/>
-                                <Setter TargetName="BtnBorder" Property="Margin" Value="0,2,0,-2"/>
-                                <Setter TargetName="BtnShadow" Property="Margin" Value="0,2,0,-2"/>
+                                <Setter TargetName="PriRoot" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.985" ScaleY="0.985"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="PriBorder" Property="Background" Value="{DynamicResource PrimaryBtnPressedBg}"/>
+                                <Setter TargetName="PriLightShadow" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="PriDarkShadow" Property="Opacity" Value="0.25"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="BtnBorder" Property="Opacity" Value="0.4"/>
-                                <Setter TargetName="BtnShadow" Property="Opacity" Value="0.2"/>
+                                <Setter TargetName="PriBorder" Property="Opacity" Value="0.4"/>
+                                <Setter TargetName="PriLightShadow" Property="Opacity" Value="0.1"/>
+                                <Setter TargetName="PriDarkShadow" Property="Opacity" Value="0.1"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -124,7 +184,7 @@
             </Setter>
         </Style>
 
-        <!-- Secondary Button (Soft raised convex pill with ambient bevel & soft shadow) -->
+        <!-- Convex Interactive Buttons: Silver tactile button with dual shadows, bevel, and active deboss -->
         <Style x:Key="SecondaryButton" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource SecondaryBtnFg}"/>
@@ -132,42 +192,169 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Padding" Value="16,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <Border x:Name="SecShadow"
+                        <Grid x:Name="SecRoot" RenderTransformOrigin="0.5,0.5">
+                            <!-- Convex State: Top-Left Specular Light Highlight (-4px -4px 10px rgba(255,255,255,0.6)) -->
+                            <Border x:Name="SecLightShadow"
                                     Background="{TemplateBinding Background}"
-                                    CornerRadius="12">
+                                    CornerRadius="14">
                                 <Border.Effect>
-                                    <DropShadowEffect BlurRadius="10" Direction="270" ShadowDepth="3" Color="#000000" Opacity="0.45"/>
+                                    <DropShadowEffect Direction="135" ShadowDepth="4" BlurRadius="10"
+                                                      Color="{DynamicResource BtnShadowLightColor}"
+                                                      RenderingBias="Performance"/>
                                 </Border.Effect>
                             </Border>
+
+                            <!-- Convex State: Bottom-Right Dark Shadow (4px 4px 10px rgba(8,8,8,0.26)) -->
+                            <Border x:Name="SecDarkShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="14">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="315" ShadowDepth="4" BlurRadius="10"
+                                                      Color="{DynamicResource BtnShadowDarkColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Debossed Inset Plate (Instant transition on IsPressed=True) -->
+                            <Border x:Name="SecInsetPlate"
+                                    Background="{DynamicResource RecessedBg}"
+                                    CornerRadius="14"
+                                    Opacity="0"
+                                    BorderThickness="1">
+                                <Border.BorderBrush>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#48080808" Offset="0.0"/>
+                                        <GradientStop Color="#18080808" Offset="0.3"/>
+                                        <GradientStop Color="#50FFFFFF" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.BorderBrush>
+                            </Border>
+
+                            <!-- Top Surface with Micro-Bevel (border: 1px solid rgba(255,255,255,0.5)) -->
                             <Border x:Name="SecBorder"
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
                                     BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="12"
+                                    CornerRadius="14"
                                     Padding="{TemplateBinding Padding}">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
+
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="SecBorder" Property="Background" Value="{DynamicResource SecondaryBtnHoverBg}"/>
                                 <Setter TargetName="SecBorder" Property="BorderBrush" Value="{DynamicResource SecondaryBtnHoverBorder}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="SecBorder" Property="Background" Value="{DynamicResource SecondaryBtnPressedBg}"/>
-                                <Setter TargetName="SecBorder" Property="BorderBrush" Value="{DynamicResource SecondaryBtnPressedBorder}"/>
-                                <Setter TargetName="SecBorder" Property="Margin" Value="0,2,0,-2"/>
-                                <Setter TargetName="SecShadow" Property="Margin" Value="0,2,0,-2"/>
+                                <Setter TargetName="SecRoot" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.985" ScaleY="0.985"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="SecLightShadow" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="SecDarkShadow" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="SecBorder" Property="Opacity" Value="0"/>
+                                <Setter TargetName="SecInsetPlate" Property="Opacity" Value="1"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="SecBorder" Property="Opacity" Value="0.4"/>
-                                <Setter TargetName="SecShadow" Property="Opacity" Value="0.2"/>
+                                <Setter TargetName="SecBorder" Property="Opacity" Value="0.45"/>
+                                <Setter TargetName="SecLightShadow" Property="Opacity" Value="0.2"/>
+                                <Setter TargetName="SecDarkShadow" Property="Opacity" Value="0.2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Convex Header Pill Button: Capsule style with CornerRadius="999" -->
+        <Style x:Key="PillButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryBtnFg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBtnBorder}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="PillGrid" RenderTransformOrigin="0.5,0.5">
+                            <!-- Convex Top-Left Specular Light Highlight -->
+                            <Border x:Name="PillLightShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="999">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="135" ShadowDepth="3" BlurRadius="8"
+                                                      Color="{DynamicResource BtnShadowLightColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Convex Bottom-Right Dark Shadow -->
+                            <Border x:Name="PillDarkShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="999">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="315" ShadowDepth="3" BlurRadius="8"
+                                                      Color="{DynamicResource BtnShadowDarkColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Debossed Inset Plate (Shown when pressed) -->
+                            <Border x:Name="PillInsetPlate"
+                                    Background="{DynamicResource RecessedBg}"
+                                    CornerRadius="999"
+                                    Opacity="0"
+                                    BorderThickness="1">
+                                <Border.BorderBrush>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#48080808" Offset="0.0"/>
+                                        <GradientStop Color="#18080808" Offset="0.3"/>
+                                        <GradientStop Color="#50FFFFFF" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.BorderBrush>
+                            </Border>
+
+                            <!-- Pill Surface with Micro-Bevel -->
+                            <Border x:Name="PillBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="999"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PillBorder" Property="Background" Value="{DynamicResource SecondaryBtnHoverBg}"/>
+                                <Setter TargetName="PillBorder" Property="BorderBrush" Value="{DynamicResource SecondaryBtnHoverBorder}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="PillGrid" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.985" ScaleY="0.985"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="PillLightShadow" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="PillDarkShadow" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="PillBorder" Property="Opacity" Value="0"/>
+                                <Setter TargetName="PillInsetPlate" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="PillBorder" Property="Opacity" Value="0.45"/>
+                                <Setter TargetName="PillLightShadow" Property="Opacity" Value="0.2"/>
+                                <Setter TargetName="PillDarkShadow" Property="Opacity" Value="0.2"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -177,38 +364,46 @@
 
         <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}"/>
 
-        <!-- Modern Input TextBox (Concave / Inset debossed container) -->
+        <!-- Debossed / Inset Modern TextBox (Recessed stamped container with inner shadow) -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource ModernTextBoxBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource ModernTextBoxFg}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource ModernTextBoxBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="16,11"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource AccentColor}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="TxtBoxBorder"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="14">
-                            <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}"/>
+                        <!-- Outer Bevel Rim (border: 1px solid rgba(255,255,255,0.3)) -->
+                        <Border CornerRadius="16"
+                                BorderBrush="{DynamicResource InsetBevelBorder}"
+                                BorderThickness="1"
+                                Background="{TemplateBinding Background}">
+                            <Grid>
+                                <!-- Inset Inner Shadow Gradient (Top-Left Dark, Bottom-Right Light) -->
+                                <Border CornerRadius="15" BorderThickness="1.5" IsHitTestVisible="False">
+                                    <Border.BorderBrush>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="{DynamicResource InsetTopDarkColor}" Offset="0.0"/>
+                                            <GradientStop Color="{DynamicResource InsetTopMidColor}" Offset="0.25"/>
+                                            <GradientStop Color="Transparent" Offset="0.5"/>
+                                            <GradientStop Color="{DynamicResource InsetBotLightColor}" Offset="1.0"/>
+                                        </LinearGradientBrush>
+                                    </Border.BorderBrush>
+                                </Border>
+
+                                <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}"/>
+                            </Grid>
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True">
-                                <Setter TargetName="TxtBoxBorder" Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Dark Styled ComboBox (prevents white-on-white text issues) -->
+        <!-- Dark / Silver Styled ComboBox -->
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource SecondaryBtnBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
@@ -223,29 +418,42 @@
             <Setter Property="Padding" Value="6,4"/>
         </Style>
 
-        <!-- Recent Connection Item: Seamless Neumorphic Card with Large Screenshot Gradient -->
+        <!-- Recent Connection Item: Convex Tactile Card with Dual Shadows and Seamless Screenshot -->
         <Style x:Key="RecentItemStyle" TargetType="ListBoxItem">
             <Setter Property="Background" Value="{DynamicResource RecentItemBg}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{DynamicResource RecentItemBorder}"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Grid>
-                            <!-- Ambient soft shadow -->
-                            <Border x:Name="ItemShadow"
+                        <Grid x:Name="CardRoot">
+                            <!-- Top-Left Light Highlight Shadow -->
+                            <Border x:Name="ItemLightShadow"
                                     Background="{TemplateBinding Background}"
-                                    CornerRadius="16"
-                                    Margin="0">
+                                    CornerRadius="16">
                                 <Border.Effect>
-                                    <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Color="#000000" Opacity="0.45"/>
+                                    <DropShadowEffect Direction="135" ShadowDepth="4" BlurRadius="8"
+                                                      Color="{DynamicResource ShadowLightColor}"
+                                                      RenderingBias="Performance"/>
                                 </Border.Effect>
                             </Border>
 
-                            <!-- Main Card with Rounded Corners and Content Clipping -->
+                            <!-- Bottom-Right Dark Shadow -->
+                            <Border x:Name="ItemDarkShadow"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="16">
+                                <Border.Effect>
+                                    <DropShadowEffect Direction="315" ShadowDepth="4" BlurRadius="8"
+                                                      Color="{DynamicResource ShadowDarkColor}"
+                                                      RenderingBias="Performance"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Main Card Surface with Rounded Corners and Content Clipping -->
                             <Border x:Name="ItemCard"
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
@@ -261,7 +469,7 @@
                                 <Setter TargetName="ItemCard" Property="BorderBrush" Value="{DynamicResource RecentItemHoverBorder}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemCard" Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+                                <Setter TargetName="ItemCard" Property="BorderBrush" Value="{DynamicResource TextPrimary}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -273,6 +481,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         </Style>
     </Window.Resources>
@@ -303,24 +512,24 @@
 
                     <!-- Left: Brand + Version badge -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="Vibe" Foreground="{DynamicResource AccentColor}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="Vibe" Foreground="{DynamicResource TextPrimary}" FontSize="20" FontWeight="ExtraBold" VerticalAlignment="Center"/>
                         <TextBlock Text="Desk" Foreground="{DynamicResource TextPrimary}" FontSize="20" FontWeight="Light" VerticalAlignment="Center"/>
-                        <Border Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1" CornerRadius="5"
-                                Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="TxtAppVersion" Text="v1.6.0" Foreground="{DynamicResource AccentColor}" FontSize="11" FontWeight="SemiBold"/>
+                        <Border Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1" CornerRadius="8"
+                                Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtAppVersion" Text="v1.6.0" Foreground="{DynamicResource TextPrimary}" FontSize="11" FontWeight="SemiBold"/>
                         </Border>
                     </StackPanel>
 
                     <!-- Right: Quick actions -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <!-- Theme Switcher: located strictly to the left of the Firewall button -->
-                        <Button x:Name="BtnThemeToggle" Style="{StaticResource SecondaryButton}" Content="🎨 Серебро"
+                        <Button x:Name="BtnThemeToggle" Style="{StaticResource PillButton}" Content="🎨 Серебро"
                                 Margin="0,0,10,0" Click="BtnThemeToggle_Click"
-                                ToolTip="Сменить тему оформления (Черный #080808 + Серебристый #BFC3C7 / Классика)"/>
-                        <Button x:Name="BtnFirewall" Style="{StaticResource SecondaryButton}" Content="Брандмауэр"
+                                ToolTip="Сменить тему оформления (Серебро Неоморфизм / Классика)"/>
+                        <Button x:Name="BtnFirewall" Style="{StaticResource PillButton}" Content="Брандмауэр"
                                 Margin="0,0,10,0" Click="BtnFirewall_Click"
                                 ToolTip="Разрешить входящие подключения в Брандмауэре Windows"/>
-                        <Button x:Name="BtnCheckUpdate" Style="{StaticResource SecondaryButton}" Content="Обновления"
+                        <Button x:Name="BtnCheckUpdate" Style="{StaticResource PillButton}" Content="Обновления"
                                 Click="BtnCheckUpdate_Click"
                                 ToolTip="Проверить наличие обновлений на GitHub"/>
                     </StackPanel>
@@ -357,14 +566,14 @@
             </Border>
 
             <!-- Main Content Area: Left = Recent Connections, Right = This PC + Remote Control -->
-            <Grid Grid.Row="2" Margin="12,8,12,8">
+            <Grid Grid.Row="2" Margin="14,10,14,10">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="360"/>
+                    <ColumnDefinition Width="370"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- LEFT: Recent Connections (Clean single panel, no nested frames) -->
-                <Border Grid.Column="0" Style="{StaticResource GlassPanel}">
+                <!-- LEFT: Recent Connections (Clean tactile extruded panel) -->
+                <ContentControl Grid.Column="0" Style="{StaticResource GlassPanel}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -372,16 +581,16 @@
                         </Grid.RowDefinitions>
 
                         <!-- Heading -->
-                        <TextBlock Grid.Row="0" Text="Недавние подключения" Foreground="{DynamicResource AccentColor}"
-                                   FontSize="14" FontWeight="SemiBold" Margin="0,0,0,16"/>
+                        <TextBlock Grid.Row="0" Text="Недавние подключения" Foreground="{DynamicResource TextPrimary}"
+                                   FontSize="15" FontWeight="SemiBold" Margin="0,0,0,16"/>
 
                         <!-- List / Empty state -->
                         <Grid Grid.Row="1">
                             <!-- Empty State -->
                             <StackPanel x:Name="PanelRecentEmpty" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <TextBlock Text="Нет недавних подключений" Foreground="{DynamicResource TextSecondary}" FontSize="13"
+                                <TextBlock Text="Нет недавних подключений" Foreground="{DynamicResource TextPrimary}" FontSize="13"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <TextBlock Text="Здесь появятся компьютеры после первого подключения." Foreground="{DynamicResource TextMuted}"
+                                <TextBlock Text="Здесь появятся компьютеры после первого подключения." Foreground="{DynamicResource TextSecondary}"
                                            FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
                             </StackPanel>
 
@@ -402,32 +611,32 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Height="82" ClipToBounds="True">
-                                            <!-- Background Layer 1: Large Edge-to-Edge Screenshot spanning across -->
+                                            <!-- Background Layer 1: High quality screenshot on the left -->
                                             <Image Source="{Binding ThumbnailSource}"
                                                    Stretch="UniformToFill"
                                                    HorizontalAlignment="Left"
                                                    VerticalAlignment="Center"
-                                                   Width="260"
-                                                   Height="82">
+                                                   Width="230"
+                                                   Height="82"
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
                                                 <Image.OpacityMask>
                                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                                         <GradientStop Color="#FFFFFFFF" Offset="0.0"/>
-                                                        <GradientStop Color="#E8FFFFFF" Offset="0.30"/>
-                                                        <GradientStop Color="#60FFFFFF" Offset="0.65"/>
-                                                        <GradientStop Color="#00FFFFFF" Offset="0.96"/>
+                                                        <GradientStop Color="#E0FFFFFF" Offset="0.25"/>
+                                                        <GradientStop Color="#50FFFFFF" Offset="0.55"/>
+                                                        <GradientStop Color="#00FFFFFF" Offset="0.80"/>
                                                     </LinearGradientBrush>
                                                 </Image.OpacityMask>
                                             </Image>
 
-                                            <!-- Layer 2: Smooth dark gradient blend across the full card width -->
+                                            <!-- Layer 2: Dynamic theme gradient blend seamlessly into card background -->
                                             <Rectangle HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                                                 <Rectangle.Fill>
                                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                        <GradientStop Color="#00000000" Offset="0.0"/>
-                                                        <GradientStop Color="#1008080A" Offset="0.25"/>
-                                                        <GradientStop Color="#8508080A" Offset="0.55"/>
-                                                        <GradientStop Color="#EA08080A" Offset="0.80"/>
-                                                        <GradientStop Color="#FF08080A" Offset="0.95"/>
+                                                        <GradientStop Color="{DynamicResource RecentFadeStartColor}" Offset="0.0"/>
+                                                        <GradientStop Color="{DynamicResource RecentFadeMidColor}" Offset="0.32"/>
+                                                        <GradientStop Color="{DynamicResource RecentFadeEndColor}" Offset="0.65"/>
+                                                        <GradientStop Color="{DynamicResource RecentFadeEndColor}" Offset="1.0"/>
                                                     </LinearGradientBrush>
                                                 </Rectangle.Fill>
                                             </Rectangle>
@@ -448,11 +657,11 @@
                                                                  ToolTip="{Binding StatusToolTip}"
                                                                  Margin="0,0,8,0" VerticalAlignment="Center">
                                                             <Ellipse.Effect>
-                                                                <DropShadowEffect BlurRadius="6" Color="#00E676" Opacity="0.7" ShadowDepth="0"/>
+                                                                <DropShadowEffect BlurRadius="6" Color="#16a34a" Opacity="0.85" ShadowDepth="0"/>
                                                             </Ellipse.Effect>
                                                         </Ellipse>
                                                         <TextBlock Text="{Binding FormattedId}" Foreground="{DynamicResource TextPrimary}"
-                                                                   FontSize="16" FontWeight="Bold" FontFamily="Consolas"
+                                                                   FontSize="16" FontWeight="ExtraBold" FontFamily="Segoe UI, Consolas"
                                                                    VerticalAlignment="Center"/>
                                                     </StackPanel>
 
@@ -461,18 +670,29 @@
                                                                FontSize="11" Margin="16.5,4,0,0"/>
                                                 </StackPanel>
 
-                                                <!-- Volumetric Circular Arrow Button -->
-                                                <Border Grid.Column="2" Width="32" Height="32" CornerRadius="16"
-                                                        Background="{DynamicResource ArrowBtnBg}"
-                                                        BorderBrush="{DynamicResource ArrowBtnBorder}"
-                                                        BorderThickness="1"
-                                                        VerticalAlignment="Center">
-                                                    <Border.Effect>
-                                                        <DropShadowEffect BlurRadius="6" Direction="270" ShadowDepth="2" Color="#000000" Opacity="0.4"/>
-                                                    </Border.Effect>
-                                                    <TextBlock Text="→" Foreground="{DynamicResource AccentColor}" FontSize="15" FontWeight="Bold"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
-                                                </Border>
+                                                <!-- Volumetric Circular Arrow Button with Dual Shadows -->
+                                                <Grid Grid.Column="2" Width="32" Height="32" VerticalAlignment="Center">
+                                                    <Border CornerRadius="16" Background="{DynamicResource ArrowBtnBg}">
+                                                        <Border.Effect>
+                                                            <DropShadowEffect Direction="135" ShadowDepth="2" BlurRadius="5"
+                                                                              Color="{DynamicResource BtnShadowLightColor}"
+                                                                              RenderingBias="Performance"/>
+                                                        </Border.Effect>
+                                                    </Border>
+                                                    <Border CornerRadius="16" Background="{DynamicResource ArrowBtnBg}">
+                                                        <Border.Effect>
+                                                            <DropShadowEffect Direction="315" ShadowDepth="2" BlurRadius="5"
+                                                                              Color="{DynamicResource BtnShadowDarkColor}"
+                                                                              RenderingBias="Performance"/>
+                                                        </Border.Effect>
+                                                    </Border>
+                                                    <Border CornerRadius="16" Background="{DynamicResource ArrowBtnBg}"
+                                                            BorderBrush="{DynamicResource ArrowBtnBorder}"
+                                                            BorderThickness="1">
+                                                        <TextBlock Text="→" Foreground="{DynamicResource TextPrimary}" FontSize="15" FontWeight="Bold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="1,-1,0,0"/>
+                                                    </Border>
+                                                </Grid>
                                             </Grid>
                                         </Grid>
                                     </DataTemplate>
@@ -480,7 +700,7 @@
                             </ListBox>
                         </Grid>
                     </Grid>
-                </Border>
+                </ContentControl>
 
                 <!-- RIGHT: This PC + Remote Control -->
                 <Grid Grid.Column="1">
@@ -489,31 +709,35 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Block 1: Этот компьютер (ТОЛЬКО ID, статус и копирование - без лишней инфы) -->
-                    <Border Grid.Row="0" Style="{StaticResource GlassPanel}">
+                    <!-- Block 1: Этот компьютер (ТОЛЬКО ID, статус и копирование) -->
+                    <ContentControl Grid.Row="0" Style="{StaticResource GlassPanel}">
                         <DockPanel LastChildFill="True">
                             <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
                                 <Button x:Name="BtnCopyId" Style="{StaticResource SecondaryButton}" Content="Копировать"
-                                        Click="BtnCopyId_Click" Padding="16,8" ToolTip="Скопировать Vibe ID в буфер обмена"/>
+                                        Click="BtnCopyId_Click" Padding="18,9" ToolTip="Скопировать Vibe ID в буфер обмена"/>
                             </StackPanel>
 
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Этот компьютер" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,4"/>
+                                <TextBlock Text="Этот компьютер" Foreground="{DynamicResource TextSecondary}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6"/>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Border x:Name="IndicatorHost" Background="{DynamicResource AccentColor}" Width="10" Height="10"
-                                            CornerRadius="5" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <Border x:Name="IndicatorHost" Background="#16a34a" Width="10" Height="10"
+                                            CornerRadius="5" Margin="0,0,12,0" VerticalAlignment="Center">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="8" Color="#16a34a" Opacity="0.85" ShadowDepth="0"/>
+                                        </Border.Effect>
+                                    </Border>
                                     <TextBlock x:Name="TxtMyId" Text="--- ---" Foreground="{DynamicResource TextPrimary}"
-                                               FontSize="30" FontWeight="Bold" FontFamily="Consolas"
+                                               FontSize="32" FontWeight="ExtraBold" FontFamily="Segoe UI, Consolas"
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <TextBlock x:Name="TxtHostStatus" Text="Ожидание подключения..." Foreground="{DynamicResource TextSecondary}"
-                                           FontSize="11" Margin="0,4,0,0"/>
+                                           FontSize="11" Margin="0,5,0,0"/>
                             </StackPanel>
                         </DockPanel>
-                    </Border>
+                    </ContentControl>
 
                     <!-- Block 2: Удаленное управление (Чистый вид без вложенных коробок) -->
-                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}">
+                    <ContentControl Grid.Row="1" Style="{StaticResource GlassPanel}">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -522,8 +746,8 @@
                             </Grid.RowDefinitions>
 
                             <!-- Heading -->
-                            <TextBlock Grid.Row="0" Text="Удалённое управление" Foreground="{DynamicResource AccentColor}"
-                                       FontSize="14" FontWeight="SemiBold" Margin="0,0,0,14"/>
+                            <TextBlock Grid.Row="0" Text="Удалённое управление" Foreground="{DynamicResource TextPrimary}"
+                                       FontSize="15" FontWeight="SemiBold" Margin="0,0,0,16"/>
 
                             <!-- Input Row -->
                             <StackPanel Grid.Row="1" Margin="0,0,0,16">
@@ -535,17 +759,17 @@
                                     <TextBox Grid.Column="0" x:Name="TxtRemoteAddress"
                                              Style="{StaticResource ModernTextBox}"
                                              Text="" KeyDown="TxtRemoteAddress_KeyDown"
-                                             Margin="0,0,10,0"/>
+                                             Margin="0,0,12,0"/>
                                     <Button Grid.Column="1" x:Name="BtnConnect"
                                              Style="{StaticResource PrimaryButton}"
                                              Content="Подключиться" Click="BtnConnect_Click"
-                                             Padding="22,10"/>
+                                             Padding="26,11"/>
                                 </Grid>
                                 <TextBlock Text="Введите Vibe ID или IP:порт удаленного компьютера."
-                                           Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="2,6,0,0"/>
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="2,6,0,0"/>
                             </StackPanel>
 
-                            <!-- Journal (Seamless console without double nested frames) -->
+                            <!-- Journal (Debossed recessed terminal) -->
                             <Grid Grid.Row="2">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -553,41 +777,57 @@
                                 </Grid.RowDefinitions>
 
                                 <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                                    <TextBlock Text="Журнал" Foreground="{DynamicResource TextSecondary}" FontSize="12"
+                                    <TextBlock Text="Журнал" Foreground="{DynamicResource TextPrimary}" FontSize="13"
                                                FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Button Style="{StaticResource SecondaryButton}" Content="Копировать"
-                                                Padding="8,3" Margin="0,0,6,0" Click="BtnCopyLogs_Click"/>
+                                                Padding="12,5" Margin="0,0,8,0" Click="BtnCopyLogs_Click"/>
                                         <Button Style="{StaticResource SecondaryButton}" Content="Очистить"
-                                                Padding="8,3" Click="BtnClearLogs_Click"/>
+                                                Padding="12,5" Click="BtnClearLogs_Click"/>
                                     </StackPanel>
                                 </DockPanel>
 
-                                <Border Grid.Row="1" Background="{DynamicResource LogBoxBg}" BorderBrush="{DynamicResource LogBoxBorder}"
-                                        BorderThickness="1" CornerRadius="13" Padding="12">
-                                    <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto">
-                                        <TextBox x:Name="TxtClientLog"
-                                                 Background="Transparent"
-                                                 Foreground="{DynamicResource LogBoxFg}"
-                                                 BorderThickness="0"
-                                                 FontFamily="Consolas, Segoe UI Mono, monospace"
-                                                 FontSize="11"
-                                                 IsReadOnly="True"
-                                                 TextWrapping="Wrap"
-                                                 VerticalScrollBarVisibility="Disabled"/>
-                                    </ScrollViewer>
+                                <!-- Inset Recessed Log Box with Inner Shadow Gradient -->
+                                <Border Grid.Row="1" Background="{DynamicResource LogBoxBg}"
+                                        BorderBrush="{DynamicResource InsetBevelBorder}"
+                                        BorderThickness="1" CornerRadius="16">
+                                    <Grid>
+                                        <!-- Inset Inner Shadow Gradient (Top-Left Dark, Bottom-Right Light) -->
+                                        <Border CornerRadius="15" BorderThickness="1.5" IsHitTestVisible="False">
+                                            <Border.BorderBrush>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                    <GradientStop Color="{DynamicResource InsetTopDarkColor}" Offset="0.0"/>
+                                                    <GradientStop Color="{DynamicResource InsetTopMidColor}" Offset="0.25"/>
+                                                    <GradientStop Color="Transparent" Offset="0.5"/>
+                                                    <GradientStop Color="{DynamicResource InsetBotLightColor}" Offset="1.0"/>
+                                                </LinearGradientBrush>
+                                            </Border.BorderBrush>
+                                        </Border>
+
+                                        <ScrollViewer x:Name="ScrollLogs" VerticalScrollBarVisibility="Auto" Padding="14,10">
+                                            <TextBox x:Name="TxtClientLog"
+                                                     Background="Transparent"
+                                                     Foreground="{DynamicResource LogBoxFg}"
+                                                     BorderThickness="0"
+                                                     FontFamily="Consolas, Segoe UI Mono, monospace"
+                                                     FontSize="11"
+                                                     IsReadOnly="True"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Disabled"/>
+                                        </ScrollViewer>
+                                    </Grid>
                                 </Border>
                             </Grid>
                         </Grid>
-                    </Border>
+                    </ContentControl>
                 </Grid>
             </Grid>
 
             <!-- Footer: Minimal clean line -->
-            <Border Grid.Row="3" Background="{DynamicResource FooterBg}" BorderBrush="{DynamicResource FooterBorder}" BorderThickness="0,1,0,0" Padding="20,8">
+            <Border Grid.Row="3" Background="{DynamicResource FooterBg}" BorderBrush="{DynamicResource FooterBorder}" BorderThickness="0,1,0,0" Padding="24,10">
                 <DockPanel>
                     <TextBlock x:Name="TxtFooterStatus" Text="VibeDesk P2P, UDP direct"
-                               Foreground="{DynamicResource TextMuted}" FontSize="11" VerticalAlignment="Center"/>
+                               Foreground="{DynamicResource TextSecondary}" FontSize="11" VerticalAlignment="Center"/>
                     <TextBlock x:Name="TxtFooterVersion" Visibility="Collapsed"/>
                 </DockPanel>
             </Border>

@@ -165,7 +165,7 @@ namespace VibeDesk
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "VibeDesk", "recent.json");
 
-        private string _currentTheme = "classic";
+        private string _currentTheme = "noir";
         private static string ThemeFilePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "VibeDesk", "theme.txt");
@@ -201,6 +201,7 @@ namespace VibeDesk
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             AppendLog("=== Инициализация VibeDesk ===");
+            VibeDesk.Native.Win32.PreventSleep();
             FindRealLocalIp();
 
             _host.DeviceId = _myDeviceId;
@@ -295,6 +296,7 @@ namespace VibeDesk
         {
             try
             {
+                VibeDesk.Native.Win32.AllowSleep();
                 Task.Run(() =>
                 {
                     try { _host.Dispose(); } catch { }
@@ -537,6 +539,40 @@ namespace VibeDesk
 
             await _signaling.RegisterHostAsync(_myDeviceId, async clientReq =>
             {
+                var bestPubEp = _physicalPublicEndPoint ?? _myPublicEndPoint;
+                string pubIpStr = bestPubEp?.Address.ToString() ?? "";
+                int pubPort = bestPubEp?.Port ?? _host.Port;
+
+                if (string.IsNullOrEmpty(pubIpStr))
+                {
+                    try
+                    {
+                        var httpIp = await StunResolver.GetPublicIpHttpAsync(2000);
+                        if (httpIp != null)
+                        {
+                            pubIpStr = httpIp.ToString();
+                        }
+                    }
+                    catch { }
+                }
+
+                // If this is merely a background availability probe, return online status immediately
+                // without starting a continuous UDP punch storm or logging session request spam
+                if (clientReq.IsProbe)
+                {
+                    return new PeerEndpointInfo
+                    {
+                        DeviceId = _myDeviceId,
+                        RequestId = clientReq.RequestId,
+                        PublicIp = pubIpStr,
+                        PublicPort = pubPort > 0 ? pubPort : _host.Port,
+                        PhysicalPublicIp = pubIpStr,
+                        PhysicalPublicPort = pubPort > 0 ? pubPort : _host.Port,
+                        LocalIp = _myLocalIp,
+                        LocalPort = _host.Port
+                    };
+                }
+
                 _ = Dispatcher.InvokeAsync(() =>
                 {
                     AppendLog($"📩 Получен запрос на сеанс от пира ID {clientReq.DeviceId}");
@@ -621,6 +657,7 @@ namespace VibeDesk
                 var responseInfo = new PeerEndpointInfo
                 {
                     DeviceId = _myDeviceId,
+                    RequestId = clientReq.RequestId,
                     PublicIp = !string.IsNullOrEmpty(httpIpStr) ? httpIpStr : bestPhysIp,
                     PublicPort = !string.IsNullOrEmpty(httpIpStr) && httpIpStr != bestPhysIp ? _host.Port : bestPhysPort,
                     PhysicalPublicIp = bestPhysIp,
@@ -749,6 +786,26 @@ namespace VibeDesk
 
                     if (hostInfo == null)
                     {
+                        // Rescue: если сигнальный ответ через брокер задержался, но в наш сокет УЖЕ прилетел встречный UDP Punch от хоста
+                        if (_lastPunchReceivedFrom != null)
+                        {
+                            string punchEp = $"{_lastPunchReceivedFrom.Address}:{_lastPunchReceivedFrom.Port}";
+                            AppendLog($"🎯 Сигнальный ответ через брокер задержался, но обнаружен живой встречный UDP-канал: {punchEp}! Подключение...");
+                            bool punchConnected = await TryConnectAsync(client, _lastPunchReceivedFrom.Address.ToString(), _lastPunchReceivedFrom.Port, timeoutMs: 3500);
+                            if (punchConnected)
+                            {
+                                AppendLog($"⚡ Успешно подключено по встречному каналу {punchEp}!");
+                                AddRecentConnection(target);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    var sessionWindow = new RemoteSessionWindow(client, target) { Owner = this };
+                                    sessionWindow.Closed += (s, ev) => Dispatcher.InvokeAsync(LoadRecentConnections);
+                                    sessionWindow.Show();
+                                });
+                                return;
+                            }
+                        }
+
                         client.Dispose();
                         AppendLog($"❌ Хост с ID {FormatId(target)} не ответил ни в локальной сети, ни через глобальный сервер.");
                         AppendLog("   Подсказка: убедитесь, что VibeDesk запущен на удаленном ПК и нажмите на нем кнопку '🛡️ Брандмауэр'.");
@@ -1075,7 +1132,7 @@ namespace VibeDesk
             _currentTheme = (_currentTheme == "noir") ? "classic" : "noir";
             SaveThemePreference(_currentTheme);
             ApplyTheme(_currentTheme);
-            AppendLog($"🎨 Тема оформления переключена на: {(_currentTheme == "noir" ? "Черный + Серебристый (#080808 / #BFC3C7)" : "Классическая (Золото + Винный)")}");
+            AppendLog($"🎨 Тема оформления переключена на: {(_currentTheme == "noir" ? "Серебро (Неоморфизм #BFC3C7 / #080808)" : "Классическая (Золото + Винный)")}");
         }
 
         private void LoadThemePreference()
@@ -1110,83 +1167,114 @@ namespace VibeDesk
             bool isNoir = theme == "noir";
             BtnThemeToggle.Content = isNoir ? "🎨 Серебро" : "🎨 Классика";
             BtnThemeToggle.ToolTip = isNoir
-                ? "Текущая тема: Черный + Серебристый (#080808 / #BFC3C7). Нажмите для переключения на классику."
-                : "Текущая тема: Классическая (Золото + Винный). Нажмите для переключения на Черный + Серебристый.";
+                ? "Текущая тема: Серебро (Неоморфизм #BFC3C7 / #080808). Нажмите для переключения на классику."
+                : "Текущая тема: Классическая (Золото + Винный). Нажмите для переключения на Серебро.";
 
             if (ImgBackground != null)
             {
-                ImgBackground.Opacity = isNoir ? 0.06 : 0.55;
+                ImgBackground.Visibility = isNoir ? Visibility.Collapsed : Visibility.Visible;
+                ImgBackground.Opacity = isNoir ? 0.0 : 0.55;
+            }
+
+            if (RectTint != null)
+            {
+                RectTint.Visibility = isNoir ? Visibility.Collapsed : Visibility.Visible;
             }
 
             if (isNoir)
             {
-                // Черно-серебристая палитра (Noir Neumorphic / Soft 3D)
-                SetThemeBrush("WindowBg", ColorFromHex("#080808"));
-                SetThemeBrush("WindowTint", ColorFromHex("#60080808"));
-                SetThemeBrush("HeaderBg", ColorFromHex("#F0080808"));
-                SetThemeBrush("HeaderBorder", ColorFromHex("#222228"));
-                SetThemeBrush("FooterBg", ColorFromHex("#F0080808"));
-                SetThemeBrush("FooterBorder", ColorFromHex("#222228"));
+                // =========================================================================
+                // Монохромный тактильный неоморфизм (Silver & Obsidian Neumorphism / Soft UI)
+                // Базовый холст и блоки: #BFC3C7. Текст и тени: #080808. Блики: полупрозрачный белый.
+                // =========================================================================
+                SetThemeBrush("WindowBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("WindowTint", Colors.Transparent);
+                SetThemeBrush("HeaderBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("HeaderBorder", Color.FromArgb(115, 255, 255, 255));
+                SetThemeBrush("FooterBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("FooterBorder", Color.FromArgb(115, 255, 255, 255));
 
-                // Выпуклые карточки (GlassPanel) с объёмным вертикальным градиентом и световым скосом
-                SetThemeBrush("GlassPanelBg", CreateVGradient(ColorFromHex("#1C1C24"), ColorFromHex("#111116")));
-                SetThemeBrush("GlassPanelBorder", CreateVGradient(ColorFromHex("#383846"), ColorFromHex("#16161D")));
+                // Выпуклые контейнеры (GlassPanel): фон #BFC3C7, микро-фаска 1px rgba(255,255,255,0.45)
+                SetThemeBrush("GlassPanelBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("GlassPanelBorder", Color.FromArgb(115, 255, 255, 255));
 
-                SetThemeBrush("AccentColor", ColorFromHex("#BFC3C7")); // Серебристый
+                // Физика двойных теней (источник света строго в верхнем левом углу)
+                SetThemeColor("ShadowLightColor", Color.FromArgb(140, 255, 255, 255)); // -7px -7px 16px rgba(255,255,255,0.55)
+                SetThemeColor("ShadowDarkColor", Color.FromArgb(61, 8, 8, 8));         // 7px 7px 16px rgba(8,8,8,0.24)
+                SetThemeColor("BtnShadowLightColor", Color.FromArgb(153, 255, 255, 255)); // -4px -4px 10px rgba(255,255,255,0.60)
+                SetThemeColor("BtnShadowDarkColor", Color.FromArgb(66, 8, 8, 8));         // 4px 4px 10px rgba(8,8,8,0.26)
+                SetThemeColor("PrimaryLightColor", Color.FromArgb(128, 255, 255, 255));   // -4px -4px 10px rgba(255,255,255,0.50)
+                SetThemeColor("PrimaryDarkColor", Color.FromArgb(89, 8, 8, 8));           // 5px 5px 12px rgba(8,8,8,0.35)
 
-                // Главная кнопка "Подключиться" (Convex metallic silver)
-                SetThemeBrush("PrimaryBtnBg", CreateVGradient3(ColorFromHex("#E8EBEF"), ColorFromHex("#C4C8CD"), ColorFromHex("#9FA4AA")));
-                SetThemeBrush("PrimaryBtnBorder", CreateVGradient(ColorFromHex("#FFFFFF"), ColorFromHex("#70757C")));
-                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#0A0A0E"));
-                SetThemeBrush("PrimaryBtnHoverBg", CreateVGradient3(ColorFromHex("#F2F5F8"), ColorFromHex("#D2D6DC"), ColorFromHex("#ACB1B8")));
-                SetThemeBrush("PrimaryBtnHoverBorder", CreateVGradient(ColorFromHex("#FFFFFF"), ColorFromHex("#8A9098")));
-                SetThemeBrush("PrimaryBtnPressedBg", CreateVGradient(ColorFromHex("#888D94"), ColorFromHex("#B6BAC0")));
-                SetThemeBrush("PrimaryBtnPressedBorder", CreateVGradient(ColorFromHex("#50545A"), ColorFromHex("#D0D4D8")));
+                // Вдавленные ниши (ModernTextBox, LogBox): внутренняя тень и фаска
+                SetThemeBrush("RecessedBg", ColorFromHex("#B8BCBF"));
+                SetThemeBrush("InsetBevelBorder", Color.FromArgb(77, 255, 255, 255)); // 1px solid rgba(255,255,255,0.30)
+                SetThemeColor("InsetTopDarkColor", Color.FromArgb(71, 8, 8, 8));       // inset 4px 4px 9px rgba(8,8,8,0.28)
+                SetThemeColor("InsetTopMidColor", Color.FromArgb(30, 8, 8, 8));        // inset fade
+                SetThemeColor("InsetBotLightColor", Color.FromArgb(140, 255, 255, 255)); // inset -4px -4px 9px rgba(255,255,255,0.55)
 
-                // Вторичные кнопки (Выпуклые тактильные плашки)
-                SetThemeBrush("SecondaryBtnBg", CreateVGradient3(ColorFromHex("#2C2C37"), ColorFromHex("#1E1E26"), ColorFromHex("#14141A")));
-                SetThemeBrush("SecondaryBtnBorder", CreateVGradient(ColorFromHex("#545468"), ColorFromHex("#1A1A22")));
-                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#D8DCE0"));
-                SetThemeBrush("SecondaryBtnHoverBg", CreateVGradient3(ColorFromHex("#3A3A49"), ColorFromHex("#282833"), ColorFromHex("#1C1C24")));
-                SetThemeBrush("SecondaryBtnHoverBorder", CreateVGradient(ColorFromHex("#787896"), ColorFromHex("#2E2E3C")));
-                SetThemeBrush("SecondaryBtnPressedBg", CreateVGradient(ColorFromHex("#101015"), ColorFromHex("#181820")));
-                SetThemeBrush("SecondaryBtnPressedBorder", CreateVGradient(ColorFromHex("#0C0C10"), ColorFromHex("#383846")));
+                SetThemeBrush("AccentColor", ColorFromHex("#080808"));
 
-                // Впуклый / утопленный инпут (ModernTextBox)
-                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#09090C"));
-                SetThemeBrush("ModernTextBoxBorder", CreateVGradient(ColorFromHex("#0A0A0E"), ColorFromHex("#323240")));
-                SetThemeBrush("ModernTextBoxFg", ColorFromHex("#F5F5F7"));
+                // Главная кнопка «Подключиться»: жесткая инверсия — глубокий черный #080808, текст цвета серебра #BFC3C7
+                SetThemeBrush("PrimaryBtnBg", CreateDiagGradient(ColorFromHex("#161616"), ColorFromHex("#080808")));
+                SetThemeBrush("PrimaryBtnBorder", Color.FromArgb(46, 255, 255, 255));
+                SetThemeBrush("PrimaryBtnFg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("PrimaryBtnHoverBg", CreateDiagGradient(ColorFromHex("#242424"), ColorFromHex("#121212")));
+                SetThemeBrush("PrimaryBtnHoverBorder", Color.FromArgb(70, 255, 255, 255));
+                SetThemeBrush("PrimaryBtnPressedBg", CreateDiagGradient(ColorFromHex("#080808"), ColorFromHex("#161616")));
+                SetThemeBrush("PrimaryBtnPressedBorder", Color.FromArgb(30, 255, 255, 255));
 
-                // Впуклый лог
-                SetThemeBrush("LogBoxBg", ColorFromHex("#07070A"));
-                SetThemeBrush("LogBoxBorder", CreateVGradient(ColorFromHex("#0A0A0E"), ColorFromHex("#262632")));
-                SetThemeBrush("LogBoxFg", ColorFromHex("#A6ABB0"));
+                // Выпуклые интерактивные кнопки (Копировать, Очистить, пилюли меню)
+                SetThemeBrush("SecondaryBtnBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("SecondaryBtnBorder", Color.FromArgb(128, 255, 255, 255)); // 1px solid rgba(255,255,255,0.50)
+                SetThemeBrush("SecondaryBtnFg", ColorFromHex("#080808"));
+                SetThemeBrush("SecondaryBtnHoverBg", ColorFromHex("#C8CCD1"));
+                SetThemeBrush("SecondaryBtnHoverBorder", Color.FromArgb(179, 255, 255, 255));
+                SetThemeBrush("SecondaryBtnPressedBg", ColorFromHex("#B4B8BC"));
+                SetThemeBrush("SecondaryBtnPressedBorder", Color.FromArgb(77, 255, 255, 255));
 
-                SetThemeBrush("TextPrimary", ColorFromHex("#F5F5F7"));
-                SetThemeBrush("TextSecondary", ColorFromHex("#8E9398"));
-                SetThemeBrush("TextMuted", ColorFromHex("#5E6266"));
+                // Вдавленные элементы (поля ввода ID, терминал журнала)
+                SetThemeBrush("ModernTextBoxBg", ColorFromHex("#B8BCBF"));
+                SetThemeBrush("ModernTextBoxBorder", Color.FromArgb(77, 255, 255, 255));
+                SetThemeBrush("ModernTextBoxFg", ColorFromHex("#080808"));
 
-                // Карточка недавних подключений
-                SetThemeBrush("RecentItemBg", CreateVGradient(ColorFromHex("#1C1C23"), ColorFromHex("#131318")));
-                SetThemeBrush("RecentItemBorder", CreateVGradient(ColorFromHex("#363644"), ColorFromHex("#181820")));
-                SetThemeBrush("RecentItemHoverBg", CreateVGradient(ColorFromHex("#262632"), ColorFromHex("#181820")));
-                SetThemeBrush("RecentItemHoverBorder", CreateVGradient(ColorFromHex("#657080"), ColorFromHex("#303844")));
+                SetThemeBrush("LogBoxBg", ColorFromHex("#B8BCBF"));
+                SetThemeBrush("LogBoxBorder", Color.FromArgb(77, 255, 255, 255));
+                SetThemeBrush("LogBoxFg", ColorFromHex("#080808"));
 
-                SetThemeBrush("ThumbnailBg", ColorFromHex("#080808"));
-                SetThemeBrush("ThumbnailBorder", ColorFromHex("#28BFC3C7"));
+                // Типографика: основной глубокий черный #080808, вторичный rgba(8,8,8,0.58)
+                SetThemeBrush("TextPrimary", ColorFromHex("#080808"));
+                SetThemeBrush("TextSecondary", Color.FromArgb(148, 8, 8, 8)); // rgba(8, 8, 8, 0.58)
+                SetThemeBrush("TextMuted", Color.FromArgb(107, 8, 8, 8));     // rgba(8, 8, 8, 0.42)
 
-                // Круглая выпуклая кнопка стрелки
-                SetThemeBrush("ArrowBtnBg", CreateVGradient(ColorFromHex("#32323E"), ColorFromHex("#1E1E26")));
-                SetThemeBrush("ArrowBtnBorder", CreateVGradient(ColorFromHex("#5C5C70"), ColorFromHex("#22222C")));
-                SetThemeBrush("ArrowBtnHoverBg", CreateVGradient(ColorFromHex("#404050"), ColorFromHex("#282834")));
-                SetThemeBrush("ArrowBtnHoverBorder", CreateVGradient(ColorFromHex("#787892"), ColorFromHex("#30303E")));
+                // Карточка недавних подключений: выпуклая серебристая карточка с плавным переходом скриншота
+                SetThemeBrush("RecentItemBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("RecentItemBorder", Color.FromArgb(115, 255, 255, 255));
+                SetThemeBrush("RecentItemHoverBg", ColorFromHex("#C8CCD1"));
+                SetThemeBrush("RecentItemHoverBorder", Color.FromArgb(179, 255, 255, 255));
 
-                SetThemeBrush("BadgeBg", CreateVGradient(ColorFromHex("#22222C"), ColorFromHex("#141418")));
-                SetThemeBrush("BadgeBorder", CreateVGradient(ColorFromHex("#3E3E4E"), ColorFromHex("#1A1A22")));
+                SetThemeColor("RecentFadeStartColor", Color.FromArgb(0, 191, 195, 199));
+                SetThemeColor("RecentFadeMidColor", Color.FromArgb(160, 191, 195, 199));
+                SetThemeColor("RecentFadeEndColor", Color.FromArgb(255, 191, 195, 199));
+
+                SetThemeBrush("ThumbnailBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("ThumbnailBorder", Color.FromArgb(60, 255, 255, 255));
+
+                // Круглая выпуклая кнопка со стрелкой
+                SetThemeBrush("ArrowBtnBg", ColorFromHex("#BFC3C7"));
+                SetThemeBrush("ArrowBtnBorder", Color.FromArgb(128, 255, 255, 255));
+                SetThemeBrush("ArrowBtnHoverBg", ColorFromHex("#C8CCD1"));
+                SetThemeBrush("ArrowBtnHoverBorder", Color.FromArgb(179, 255, 255, 255));
+
+                // Бейдж версии
+                SetThemeBrush("BadgeBg", ColorFromHex("#B8BCBF"));
+                SetThemeBrush("BadgeBorder", Color.FromArgb(102, 255, 255, 255));
             }
             else
             {
-                // Классическая палитра (Винный + Золото)
+                // =========================================================================
+                // Классическая палитра (Винный + Золото на темном фоне)
+                // =========================================================================
                 SetThemeBrush("WindowBg", ColorFromHex("#191716"));
                 SetThemeBrush("WindowTint", ColorFromHex("#50191716"));
                 SetThemeBrush("HeaderBg", ColorFromHex("#C0181312"));
@@ -1196,6 +1284,19 @@ namespace VibeDesk
 
                 SetThemeBrush("GlassPanelBg", CreateVGradient(ColorFromHex("#241D1B"), ColorFromHex("#171211")));
                 SetThemeBrush("GlassPanelBorder", CreateVGradient(ColorFromHex("#5C423E"), ColorFromHex("#251B1A")));
+
+                SetThemeColor("ShadowLightColor", Color.FromArgb(16, 255, 255, 255));
+                SetThemeColor("ShadowDarkColor", Color.FromArgb(140, 0, 0, 0));
+                SetThemeColor("BtnShadowLightColor", Color.FromArgb(20, 255, 255, 255));
+                SetThemeColor("BtnShadowDarkColor", Color.FromArgb(120, 0, 0, 0));
+                SetThemeColor("PrimaryLightColor", Color.FromArgb(20, 255, 255, 255));
+                SetThemeColor("PrimaryDarkColor", Color.FromArgb(140, 0, 0, 0));
+
+                SetThemeBrush("RecessedBg", ColorFromHex("#14100F"));
+                SetThemeBrush("InsetBevelBorder", ColorFromHex("#305C423E"));
+                SetThemeColor("InsetTopDarkColor", Color.FromArgb(100, 0, 0, 0));
+                SetThemeColor("InsetTopMidColor", Color.FromArgb(40, 0, 0, 0));
+                SetThemeColor("InsetBotLightColor", Color.FromArgb(25, 194, 168, 120));
 
                 SetThemeBrush("AccentColor", ColorFromHex("#C2A878"));
 
@@ -1232,6 +1333,10 @@ namespace VibeDesk
                 SetThemeBrush("RecentItemHoverBg", CreateVGradient(ColorFromHex("#3A2A26"), ColorFromHex("#241A18")));
                 SetThemeBrush("RecentItemHoverBorder", CreateVGradient(ColorFromHex("#8A645E"), ColorFromHex("#3A2825")));
 
+                SetThemeColor("RecentFadeStartColor", Color.FromArgb(0, 32, 27, 25));
+                SetThemeColor("RecentFadeMidColor", Color.FromArgb(160, 32, 27, 25));
+                SetThemeColor("RecentFadeEndColor", Color.FromArgb(255, 32, 27, 25));
+
                 SetThemeBrush("ThumbnailBg", ColorFromHex("#1A1413"));
                 SetThemeBrush("ThumbnailBorder", ColorFromHex("#35C2A878"));
 
@@ -1248,6 +1353,24 @@ namespace VibeDesk
         private void SetThemeBrush(string key, Brush brush)
         {
             Resources[key] = brush;
+        }
+
+        private void SetThemeColor(string key, Color color)
+        {
+            Resources[key] = color;
+        }
+
+        private static LinearGradientBrush CreateDiagGradient(Color topLeft, Color botRight)
+        {
+            var brush = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new GradientStop(topLeft, 0.0),
+                    new GradientStop(botRight, 1.0)
+                },
+                new Point(0, 0), new Point(1, 1));
+            brush.Freeze();
+            return brush;
         }
 
         private static LinearGradientBrush CreateVGradient(Color top, Color bottom)
@@ -1455,7 +1578,8 @@ namespace VibeDesk
                         {
                             DeviceId = _myDeviceId,
                             LocalIp = _myLocalIp,
-                            LocalPort = VibeClient.DefaultClientPort
+                            LocalPort = VibeClient.DefaultClientPort,
+                            IsProbe = true
                         };
 
                         var hostInfo = await _signaling.RequestHostEndpointsAsync(item.DeviceId, probeClientInfo, timeoutMs: 1500);
